@@ -1,9 +1,11 @@
+import csv
 import glob
+import json
+import os
+
 import numpy as np
 from astropy.io import ascii
-import os
-import csv
-import json
+
 import NGSF_version
 from NGSF.params import Parameters
 
@@ -26,29 +28,25 @@ def list_folders(path):
     return folders
 
 
-class Metadata(object):
-
+class Metadata:
     def __init__(self):
 
         parameters = Parameters(ngsf_cfg)
 
         # mjd_max_brightness = glob.glob('**/mjd**')[0]
-        mjd_max_brightness = os.path.join(parameters.pkg_dir,
-                                          'NGSF/mjd_of_maximum_brightness.csv')
+        mjd_max_brightness = os.path.join(parameters.pkg_dir, "NGSF/mjd_of_maximum_brightness.csv")
 
-        with open(mjd_max_brightness, mode='r') as inp:
+        with open(mjd_max_brightness) as inp:
             reader = csv.reader(inp)
             band_dictionary = {rows[0]: rows[2] for rows in reader}
 
-        with open(mjd_max_brightness, mode='r') as inp:
+        with open(mjd_max_brightness) as inp:
             reader = csv.reader(inp)
             mjd_dictionary = {rows[0]: rows[1] for rows in reader}
 
-        sne_folder = os.path.join(parameters.bank_dir,
-                                  'original_resolution', 'sne')
+        sne_folder = os.path.join(parameters.bank_dir, "original_resolution", "sne")
 
-        folders = [os.path.join(parameters.pkg_dir, sne_folder, x) for x in
-                   parameters.temp_sn_tr]
+        folders = [os.path.join(parameters.pkg_dir, sne_folder, x) for x in parameters.temp_sn_tr]
         have_wiserep = []
         no_wiserep = []
         z_dic = {}
@@ -67,71 +65,75 @@ class Metadata(object):
             subs = list_folders(folder)
             for sub in subs:
                 subpath = sub
-                idx = subpath.rfind('/')
-                sub = subpath[(idx+1):]
+                idx = subpath.rfind("/")
+                sub = subpath[(idx + 1) :]
                 subfolders.append(subpath)
-                idx2 = subpath[0:idx].rfind('/')
-                sn_type = subpath[idx2+1:idx]
+                idx2 = subpath[0:idx].rfind("/")
+                sn_type = subpath[idx2 + 1 : idx]
                 type_dic[sub] = sn_type
-                if os.path.exists(subpath+'/wiserep_spectra.csv'):
+                if os.path.exists(subpath + "/wiserep_spectra.csv"):
                     have_wiserep.append(subpath)
-                    wise = ascii.read(subpath+'/wiserep_spectra.csv')
+                    wise = ascii.read(subpath + "/wiserep_spectra.csv")
                     path_dic[sub] = subpath
-                    z_dic[sub] = wise['Redshift'][0]
-                    coord_dic[sub] = np.array(list(wise['Obj. RA',
-                                                        'Obj. DEC'][0]))
+                    z_dic[sub] = wise["Redshift"][0]
+                    coord_dic[sub] = np.array(list(wise["Obj. RA", "Obj. DEC"][0]))
 
-                    jd_dic[sub] = np.array(wise['JD'][:])
-                    obs_date_dict[sub] = np.array(wise['Obs-date'][:])
-                    spec_file_dic[sub] = np.array(wise['Ascii file'][:])
-                    inst_dic[sub] = np.array(wise['Instrument'][:])
+                    jd_dic[sub] = np.array(wise["JD"][:])
+                    obs_date_dict[sub] = np.array(wise["Obs-date"][:])
+                    spec_file_dic[sub] = np.array(wise["Ascii file"][:])
+                    inst_dic[sub] = np.array(wise["Instrument"][:])
                     for i, spec_file in enumerate(spec_file_dic[sub]):
-
                         if float(mjd_dictionary[sub]) == -1:
-
-                            phase = 'u'
+                            phase = "u"
 
                         else:
-
-                            phase = float(wise['JD'][i]) - (
-                                float(mjd_dictionary[sub]) + 2400000.5)
+                            phase = float(wise["JD"][i]) - (float(mjd_dictionary[sub]) + 2400000.5)
 
                             phase = round(phase, 2)
 
                         if parameters.epoch_high == parameters.epoch_low:
-
                             band = band_dictionary[sub]
 
-                            shorhand_dict[spec_file] = \
-                                sn_type + '/' + sub + '/' + wise[
-                                    'Instrument'][i]+' phase-band : ' + str(
-                                    phase) + str(band)
+                            shorhand_dict[spec_file] = (
+                                sn_type
+                                + "/"
+                                + sub
+                                + "/"
+                                + wise["Instrument"][i]
+                                + " phase-band : "
+                                + str(phase)
+                                + str(band)
+                            )
 
-                            short_path_dict[shorhand_dict[
-                                spec_file]] = spec_file
+                            short_path_dict[shorhand_dict[spec_file]] = spec_file
 
-                            dictionary_all_trunc_objects[spec_file] = \
-                                os.path.join(parameters.pkg_dir, sne_folder,
-                                             sn_type, sub, spec_file)
+                            dictionary_all_trunc_objects[spec_file] = os.path.join(
+                                parameters.pkg_dir, sne_folder, sn_type, sub, spec_file
+                            )
 
                         else:
-
-                            if phase != 'u' and parameters.epoch_low <= phase \
-                                    <= parameters.epoch_high:
-
+                            if (
+                                phase != "u"
+                                and parameters.epoch_low <= phase <= parameters.epoch_high
+                            ):
                                 band = band_dictionary[sub]
 
-                                shorhand_dict[spec_file] = \
-                                    sn_type + '/' + sub + '/' + \
-                                    wise['Instrument'][i] + ' phase-band : ' + \
-                                    str(phase) + str(band)
+                                shorhand_dict[spec_file] = (
+                                    sn_type
+                                    + "/"
+                                    + sub
+                                    + "/"
+                                    + wise["Instrument"][i]
+                                    + " phase-band : "
+                                    + str(phase)
+                                    + str(band)
+                                )
 
-                                short_path_dict[shorhand_dict[
-                                    spec_file]] = spec_file
+                                short_path_dict[shorhand_dict[spec_file]] = spec_file
 
-                                dictionary_all_trunc_objects[spec_file] = \
-                                    sne_folder + sn_type + '/' + sub + '/' + \
-                                    spec_file
+                                dictionary_all_trunc_objects[spec_file] = (
+                                    sne_folder + sn_type + "/" + sub + "/" + spec_file
+                                )
 
                 else:
                     no_wiserep.append(subpath)

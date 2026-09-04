@@ -2,7 +2,6 @@ import numpy as np
 
 
 def select_templates(database, types):
-
     """
 
 

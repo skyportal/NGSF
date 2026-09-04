@@ -1,19 +1,20 @@
-import numpy as np
-from scipy import interpolate
+import itertools
+import json
+import os
+
 import extinction
-from extinction import apply
+import numpy as np
 from astropy import table
 from astropy.io import ascii
-import itertools
-import os
-import json
+from extinction import apply
 from PyAstronomy import pyasl
+from scipy import interpolate
 
-from NGSF.get_metadata import Metadata
-from NGSF.error_routines import savitzky_golay, linear_error
-from NGSF.params import Parameters
-from NGSF.Header_Binnings import bin_spectrum_bank, mask_lines_bank, kill_header
 import NGSF_version
+from NGSF.error_routines import linear_error, savitzky_golay
+from NGSF.get_metadata import Metadata
+from NGSF.Header_Binnings import bin_spectrum_bank, kill_header, mask_lines_bank
+from NGSF.params import Parameters
 
 try:
     configfile = os.environ["NGSFCONFIG"]
@@ -25,26 +26,29 @@ with open(configfile) as config_file:
 np.seterr(divide="ignore", invalid="ignore")
 
 
-def sn_hg_arrays(z, extcon, lam, templates_sn_trunc, templates_sn_trunc_dict,
-                 templates_gal_trunc, templates_gal_trunc_dict, alam_dict,):
+def sn_hg_arrays(
+    z,
+    extcon,
+    lam,
+    templates_sn_trunc,
+    templates_sn_trunc_dict,
+    templates_gal_trunc,
+    templates_gal_trunc_dict,
+    alam_dict,
+):
 
     sn = []
     gal = []
     for i in range(0, len(templates_sn_trunc)):
-
         one_sn = templates_sn_trunc_dict[templates_sn_trunc[i]]
         a_lam_sn = alam_dict[templates_sn_trunc[i]]
         redshifted_sn = one_sn[:, 0] * (z + 1)
-        extinct_excon = one_sn[:, 1] * 10 ** (-0.4 * extcon *
-                                              a_lam_sn) / (1 + z)
-        sn_interp = np.interp(
-            lam, redshifted_sn, extinct_excon, left=np.nan, right=np.nan
-        )
+        extinct_excon = one_sn[:, 1] * 10 ** (-0.4 * extcon * a_lam_sn) / (1 + z)
+        sn_interp = np.interp(lam, redshifted_sn, extinct_excon, left=np.nan, right=np.nan)
 
         sn.append(sn_interp)
 
     for i in range(0, len(templates_gal_trunc)):
-
         one_gal = templates_gal_trunc_dict[templates_gal_trunc[i]]
         gal_interp = np.interp(
             lam,
@@ -73,9 +77,7 @@ def remove_telluric(spectrum):
 
     flux_no_tell = 0
     for i in range(0, len(lam)):
-
         if 7594 <= lam[i] <= 7680:
-
             flux[i] = -10000
 
         array1 = flux
@@ -85,7 +87,6 @@ def remove_telluric(spectrum):
 
 
 def Alam(lamin, A_v=1, R_v=3.1):
-
     """
     Add extinction with R_v = 3.1 and A_v = 1, A_v = 1 in order
     to find the constant of proportionality for
@@ -101,7 +102,6 @@ def Alam(lamin, A_v=1, R_v=3.1):
 
 
 def error_obj(kind, lam, object_to_fit):
-
     """
     This function gives an error based on user input. The error can be obtained
     by either a Savitzky-Golay filter, a linear error approximation or it can
@@ -123,7 +123,6 @@ def error_obj(kind, lam, object_to_fit):
     sigma = None
 
     if kind == "included" and len(object_spec[1, :]) > 2:
-
         error = object_spec[:, 2]
 
         object_err_interp = interpolate.interp1d(
@@ -133,7 +132,6 @@ def error_obj(kind, lam, object_to_fit):
         sigma = object_err_interp(lam)
 
     if kind == "linear":
-
         error = linear_error(object_spec)
 
         object_err_interp = interpolate.interp1d(
@@ -143,7 +141,6 @@ def error_obj(kind, lam, object_to_fit):
         sigma = object_err_interp(lam)
 
     if kind == "sg":
-
         error = savitzky_golay(object_spec)
 
         object_err_interp = interpolate.interp1d(
@@ -155,10 +152,20 @@ def error_obj(kind, lam, object_to_fit):
     return sigma
 
 
-def core(int_obj, z, extcon, templates_sn_trunc, templates_sn_trunc_dict,
-         templates_gal_trunc, templates_gal_trunc_dict, alam_dict, lam,
-         resolution, iterations, **kwargs):
-
+def core(
+    int_obj,
+    z,
+    extcon,
+    templates_sn_trunc,
+    templates_sn_trunc_dict,
+    templates_gal_trunc,
+    templates_gal_trunc_dict,
+    alam_dict,
+    lam,
+    resolution,
+    iterations,
+    **kwargs,
+):
     """
 
     Inputs:
@@ -184,15 +191,20 @@ def core(int_obj, z, extcon, templates_sn_trunc, templates_sn_trunc_dict,
 
     sigma = error_obj(kind, lam, original)
 
-    sn, gal = sn_hg_arrays(z, extcon, lam, templates_sn_trunc,
-                           templates_sn_trunc_dict, templates_gal_trunc,
-                           templates_gal_trunc_dict, alam_dict,)
+    sn, gal = sn_hg_arrays(
+        z,
+        extcon,
+        lam,
+        templates_sn_trunc,
+        templates_sn_trunc_dict,
+        templates_gal_trunc,
+        templates_gal_trunc_dict,
+        alam_dict,
+    )
 
     # Apply linear algebra witchcraft
 
-    c = 1 / (
-        np.nansum(sn**2, 2) * np.nansum(gal**2, 2) - np.nansum(gal * sn, 2) ** 2
-    )
+    c = 1 / (np.nansum(sn**2, 2) * np.nansum(gal**2, 2) - np.nansum(gal * sn, 2) ** 2)
     b = c * (
         np.nansum(gal**2, 2) * np.nansum(sn * int_obj, 2)
         - np.nansum(gal * sn, 2) * np.nansum(gal * int_obj, 2)
@@ -219,8 +231,7 @@ def core(int_obj, z, extcon, templates_sn_trunc, templates_sn_trunc_dict,
     overlap = times / len(lam) > minimum_overlap
 
     # Obtain and reduce chi2
-    chi2 = np.nansum(
-        ((int_obj - (sn_b * sn + gal_d * gal)) ** 2 / sigma ** 2), 2)
+    chi2 = np.nansum(((int_obj - (sn_b * sn + gal_d * gal)) ** 2 / sigma**2), 2)
 
     # avoid short overlaps
     chi2[~overlap] = np.inf
@@ -242,7 +253,6 @@ def core(int_obj, z, extcon, templates_sn_trunc, templates_sn_trunc_dict,
 
     outputs = None
     for i in range(iterations):
-
         idx = np.unravel_index(index[i], reduchi2.shape)
         rchi2 = reduchi2[idx]
 
@@ -253,7 +263,7 @@ def core(int_obj, z, extcon, templates_sn_trunc, templates_sn_trunc_dict,
 
         host_galaxy_file = str(host_galaxy_file)
         idxx = host_galaxy_file.rfind("/")
-        host_galaxy_file = host_galaxy_file[idxx + 1:]
+        host_galaxy_file = host_galaxy_file[idxx + 1 :]
 
         bb = b[idx[0]][idx[1]]
 
@@ -267,7 +277,7 @@ def core(int_obj, z, extcon, templates_sn_trunc, templates_sn_trunc_dict,
         gal_cont = gal_cont / sum_cont
 
         ii = supernova_file.rfind(":")
-        the_phase = supernova_file[ii + 1: -1]
+        the_phase = supernova_file[ii + 1 : -1]
         the_band = supernova_file[-1]
 
         output = table.Table(
@@ -355,8 +365,7 @@ def mask_gal_lines(data, z_obj):
 
     cum_mask = np.array([True] * len(data[:, 0]))
     for i in range(len(host_lines_air)):
-        mask = np.array(list(map(lambda x: ~func(x, host_range_air[i]),
-                                 data[:, 0])))
+        mask = np.array(list(map(lambda x: ~func(x, host_range_air[i]), data[:, 0])))
         cum_mask = cum_mask & mask
 
     data_masked = data[cum_mask]
@@ -364,10 +373,17 @@ def mask_gal_lines(data, z_obj):
     return data_masked
 
 
-def all_parameter_space(int_obj, redshift, extconstant, templates_sn_trunc,
-                        templates_gal_trunc, lam, resolution, iterations,
-                        **kwargs):
-
+def all_parameter_space(
+    int_obj,
+    redshift,
+    extconstant,
+    templates_sn_trunc,
+    templates_gal_trunc,
+    lam,
+    resolution,
+    iterations,
+    **kwargs,
+):
     """
 
     This function loops the core function of superfit over two user given
@@ -399,7 +415,7 @@ def all_parameter_space(int_obj, redshift, extconstant, templates_sn_trunc,
 
     parameters = Parameters(ngsf_cfg)
 
-    verbose = (parameters.verbose == 1)
+    verbose = parameters.verbose == 1
 
     metadata = Metadata()
 
@@ -416,18 +432,17 @@ def all_parameter_space(int_obj, redshift, extconstant, templates_sn_trunc,
     # sn_spec_files = [str(x) for x in metadata.shorhand_dict.values()]
     path_dict = {}
 
-    all_bank_files = [str(x) for x in
-                      metadata.dictionary_all_trunc_objects.values()]
+    all_bank_files = [str(x) for x in metadata.dictionary_all_trunc_objects.values()]
 
     print("Reading SN templates", flush=True)
     if resolution == 10 or resolution == 30:
-
         for i in range(0, len(all_bank_files)):
             a = all_bank_files[i]
 
-            full_name = a[a.find("sne"):]
-            one_sn = os.path.join(parameters.bank_dir, "binnings",
-                                  str(resolution) + "A/", str(full_name))
+            full_name = a[a.find("sne") :]
+            one_sn = os.path.join(
+                parameters.bank_dir, "binnings", str(resolution) + "A/", str(full_name)
+            )
 
             if parameters.mask_galaxy_lines == 1:
                 one_sn = np.loadtxt(one_sn)
@@ -446,11 +461,8 @@ def all_parameter_space(int_obj, redshift, extconstant, templates_sn_trunc,
             alam_dict[short_name] = Alam(one_sn[:, 0])
 
     elif parameters.resolution != 30 or parameters.resolution != 10:
-
         for i in range(0, len(all_bank_files)):
-
             if parameters.mask_galaxy_lines == 1:
-
                 one_sn = kill_header(all_bank_files[i])
                 one_sn = mask_lines_bank(one_sn)
                 one_sn = bin_spectrum_bank(one_sn, resolution)
@@ -472,7 +484,6 @@ def all_parameter_space(int_obj, redshift, extconstant, templates_sn_trunc,
 
     print("Reading Galaxy templates", flush=True)
     for i in range(0, len(templates_gal_trunc)):
-
         one_gal = np.loadtxt(templates_gal_trunc[i])
         one_gal = bin_spectrum_bank(one_gal, resolution)
         templates_gal_trunc_dict[templates_gal_trunc[i]] = one_gal
@@ -481,17 +492,20 @@ def all_parameter_space(int_obj, redshift, extconstant, templates_sn_trunc,
     results = []
 
     if not verbose:
-        print("Probing A_v: %.2f to %.2f with %.2f sampling" %
-              (extconstant[0], extconstant[-1], extconstant[1] - extconstant[0]), flush=True)
+        print(
+            f"Probing A_v: {extconstant[0]:.2f} to {extconstant[-1]:.2f} "
+            f"with {extconstant[1] - extconstant[0]:.2f} sampling",
+            flush=True,
+        )
     old_z = -999.0
     for element in itertools.product(redshift, extconstant):
         if element[0] != old_z and verbose:
-            print("\nProbing z={:.2f}".format(element[0]), flush=True)
+            print(f"\nProbing z={element[0]:.2f}", flush=True)
             old_z = element[0]
             print("A_v = ", end=" ", flush=True)
 
         if verbose:
-            print("{:.2f}".format(element[1]), end=" ", flush=True)
+            print(f"{element[1]:.2f}", end=" ", flush=True)
 
         a, _ = core(
             int_obj,
@@ -505,7 +519,7 @@ def all_parameter_space(int_obj, redshift, extconstant, templates_sn_trunc,
             lam,
             resolution,
             iterations,
-            **kwargs
+            **kwargs,
         )
 
         results.append(a)
@@ -521,10 +535,9 @@ def all_parameter_space(int_obj, redshift, extconstant, templates_sn_trunc,
 
     result.sort("CHI2/dof2")
 
-    ascii.write(result, save + ".csv", format="csv",
-                fast_writer=False, overwrite=True)
+    ascii.write(result, save + ".csv", format="csv", fast_writer=False, overwrite=True)
 
     end = time.time()
-    print("Runtime: {0: .2f}s ".format(end - start))
+    print(f"Runtime: {end - start: .2f}s ")
 
     return

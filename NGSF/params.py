@@ -1,5 +1,6 @@
 import glob
 import os
+
 import numpy as np
 
 from NGSF.auxiliary import select_templates
@@ -23,10 +24,8 @@ class Parameters:
         if self.use_exact_z:
             self.redshift = np.array([self.z_exact])
         else:
-            z_num = int((self.z_range_end -
-                         self.z_range_begin) / self.z_int) + 1
-            self.redshift = np.linspace(self.z_range_begin,
-                                        self.z_range_end, z_num)
+            z_num = int((self.z_range_end - self.z_range_begin) / self.z_int) + 1
+            self.redshift = np.linspace(self.z_range_begin, self.z_range_end, z_num)
 
         self.mask_galaxy_lines = data["mask_galaxy_lines"]
         self.mask_telluric = data["mask_telluric"]
@@ -49,8 +48,7 @@ class Parameters:
         self.Alam_low = data["Alam_low"]
         self.Alam_interval = data["Alam_interval"]
 
-        alam_num = int((self.Alam_high -
-                        self.Alam_low) / self.Alam_interval) + 1
+        alam_num = int((self.Alam_high - self.Alam_low) / self.Alam_interval) + 1
         self.extconstant = np.linspace(self.Alam_low, self.Alam_high, alam_num)
 
         # Library to look at
@@ -89,16 +87,14 @@ class Parameters:
 
         if self.resolution == 10 or self.resolution == 30:
             templates_gal = glob.glob(
-                os.path.join(self.bank_dir, "binnings",
-                             str(self.resolution) + "A", "gal", "*"))
-            templates_gal = [
-                x for x in templates_gal if "CVS" not in x and "README" not in x
-            ]
+                os.path.join(self.bank_dir, "binnings", str(self.resolution) + "A", "gal", "*")
+            )
+            templates_gal = [x for x in templates_gal if "CVS" not in x and "README" not in x]
             templates_gal = np.array(templates_gal)
 
             templates_sn = glob.glob(
-                os.path.join(self.bank_dir, "binnings",
-                             str(self.resolution) + "A", "sne/**/**/*"))
+                os.path.join(self.bank_dir, "binnings", str(self.resolution) + "A", "sne/**/**/*")
+            )
             templates_sn = [
                 x
                 for x in templates_sn
@@ -111,15 +107,14 @@ class Parameters:
 
         else:
             templates_gal = glob.glob(
-                os.path.join(self.bank_dir, "original_resolution", "gal", "*"))
-            templates_gal = [
-                x for x in templates_gal if "CVS" not in x and "README" not in x
-            ]
+                os.path.join(self.bank_dir, "original_resolution", "gal", "*")
+            )
+            templates_gal = [x for x in templates_gal if "CVS" not in x and "README" not in x]
             templates_gal = np.array(templates_gal)
 
             templates_sn = glob.glob(
-                os.path.join(self.bank_dir, "original_resolution",
-                             "sne/**/**/*"))
+                os.path.join(self.bank_dir, "original_resolution", "sne/**/**/*")
+            )
             templates_sn = [
                 x
                 for x in templates_sn
@@ -130,15 +125,12 @@ class Parameters:
             ]
             templates_sn = np.array(templates_sn)
 
-        self.templates_sn_trunc = select_templates(templates_sn,
-                                                   self.temp_sn_tr)
-        self.templates_gal_trunc = select_templates(templates_gal,
-                                                    self.temp_gal_tr)
+        self.templates_sn_trunc = select_templates(templates_sn, self.temp_sn_tr)
+        self.templates_gal_trunc = select_templates(templates_gal, self.temp_gal_tr)
 
     def calc_lam(self):
 
         if self.upper == self.lower:
-
             self.lower = kill_header(self.object_to_fit)[1][0] - 300
             self.upper = kill_header(self.object_to_fit)[-1][0] + 300
 
@@ -146,6 +138,5 @@ class Parameters:
             self.lam = np.linspace(self.lower, self.upper, interval)
 
         else:
-
             interval = int((self.upper - self.lower) / self.resolution)
             self.lam = np.linspace(self.lower, self.upper, interval)

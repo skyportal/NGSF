@@ -1,54 +1,125 @@
+"""End-to-end fit against the real template bank.
+
+Marked `integration`: it needs the 74 MB WISeREP bank, which is downloaded once
+into <repo>/bank (cached in CI). Deselect with `-m "not integration"`.
+"""
+
+import csv
 import json
-import numpy as np
 import os
-import pandas as pd
+import shutil
 import subprocess
 import sys
 import zipfile
+from pathlib import Path
+from urllib.request import Request, urlopen
+
+import pytest
+
+REPO = Path(__file__).resolve().parents[2]
+BANK_PATH = REPO / "bank"
+BANK_URL = "https://www.wiserep.org/sites/default/files/supyfit_bank.zip"
+SPECTRUM = REPO / "NGSF/tests/data/SN2021urb_2021-08-06_00-00-00_Keck1_LRIS_TNS.flm"
+REDSHIFT = 0.127
+
+pytestmark = pytest.mark.integration
 
 
-def test_fit():
+@pytest.fixture(scope="session")
+def bank():
+    if BANK_PATH.is_dir():
+        return BANK_PATH
+    archive = REPO / "supyfit_bank.zip"
+    try:
+        # WISeREP serves an error page unless the request looks like a browser.
+        request = Request(BANK_URL, headers={"User-Agent": "Mozilla/5.0"})
+        with urlopen(request, timeout=300) as response, archive.open("wb") as out:
+            shutil.copyfileobj(response, out)
+        with zipfile.ZipFile(archive) as z:
+            z.extractall(REPO)
+    except Exception as e:  # noqa: BLE001 — no bank means the fit can't run at all
+        pytest.skip(f"template bank unavailable: {e}")
+    finally:
+        archive.unlink(missing_ok=True)
+    return BANK_PATH
 
-    SUPERFIT_PATH = "./"
-    SUPERFIT_PARAMETERS_JSON = "./parameters.json"
-    SUPERFIT_DATA_PATH = "./NGSF/tests/data"
-    filebase = "SN2021urb_2021-08-06_00-00-00_Keck1_LRIS_TNS"
-    NGSF_bank = "https://www.wiserep.org/sites/default/files/supyfit_bank.zip"
-    NGSF_zip = f"{SUPERFIT_PATH}/{NGSF_bank.split('/')[-1]}"
-    BANK_PATH = f"{SUPERFIT_PATH}/bank"
 
-    if not os.path.isdir(BANK_PATH):
-        curl_command = (
-            'curl -L -H "Content-Type: application/json" -H '
-            '"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) '
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            f'Chrome/62.0.3202.94 Safari/537.36" -o {NGSF_zip} {NGSF_bank}'
-        )
-        os.system(curl_command)
-
-        with zipfile.ZipFile(NGSF_zip, "r") as z:
-            z.extractall(SUPERFIT_PATH)
-
-    params = json.loads(open(SUPERFIT_PARAMETERS_JSON).read())
-    params["object_to_fit"] = f"{SUPERFIT_DATA_PATH}/{filebase}.flm"
-    params["show_plot"] = 0
-
-    JSON_FILE = f"{SUPERFIT_DATA_PATH}/{filebase}.json"
-    with open(JSON_FILE, "w") as f:
-        json.dump(params, f)
-
-    subprocess.call(
-        f"python run.py {SUPERFIT_DATA_PATH}/{filebase}.json",
-        shell=True,
-        stdout=sys.stdout,
-        stderr=subprocess.STDOUT,
+@pytest.fixture
+def tree(tmp_path, bank):
+    """A writable NGSF tree: pkg_dir is both the code root and the output root."""
+    root = tmp_path / "NGSF"
+    shutil.copytree(
+        REPO,
+        root,
+        ignore=shutil.ignore_patterns(
+            "__pycache__", ".git", "bank", "fit_results", "fit_results_z"
+        ),
     )
+    for sub in ("fit_results", "fit_results_z"):
+        (root / sub).mkdir(exist_ok=True)
 
-    #results_path = os.path.join(SUPERFIT_PATH, f"{filebase}.csv")
-    results_path = os.path.join(SUPERFIT_PATH, params["saving_results_path"], f"{filebase}.csv")
-    results = pd.read_csv(results_path)
-    results.sort_values(by=["CHI2/dof"], inplace=True)
+    config_path = root / "config" / "parameters.json"
+    config = json.loads(config_path.read_text())
+    config.update({"pkg_dir": f"{root}/", "bank_dir": f"{bank}/", "show_plot": 0})
+    config_path.write_text(json.dumps(config))
+    return root
 
-    #assert all([np.isclose(z, 0.127) for z in results["Z"]])
-    assert all([np.isclose(z, params["z_exact"]) for z in results["Z"]])
-    assert all([~np.isnan(chi2) for chi2 in results["CHI2/dof"]])
+
+def run_fit(tree, redshift):
+    proc = subprocess.run(
+        [sys.executable, "run.py", str(SPECTRUM), str(redshift), "4000", "9500"],
+        cwd=tree,
+        env={
+            **os.environ,
+            "NGSFCONFIG": str(tree / "config" / "parameters.json"),
+            "PYTHONPATH": str(tree),
+            "MPLBACKEND": "Agg",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, f"NGSF failed:\n{proc.stdout[-2000:]}\n{proc.stderr[-2000:]}"
+    out_dir = tree / ("fit_results" if float(redshift) == 100 else "fit_results_z")
+    results = out_dir / f"{SPECTRUM.stem}.csv"
+    assert results.exists(), f"no results at {results}"
+    return list(csv.DictReader(results.open())), out_dir
+
+
+def test_fit_at_fixed_redshift(tree):
+    rows, out_dir = run_fit(tree, REDSHIFT)
+
+    assert rows, "results table is empty"
+    assert all(abs(float(r["Z"]) - REDSHIFT) < 1e-6 for r in rows)
+    chi2 = [float(r["CHI2/dof"]) for r in rows]
+    assert all(c == c for c in chi2), "NaN in CHI2/dof"
+    assert chi2 == sorted(chi2), "results are not ranked by chi2"
+
+    # The ranked fit plots are what gets posted back to SkyPortal/Fritz.
+    assert sorted(out_dir.glob(f"{SPECTRUM.stem}_ngsf*.png"))
+
+
+def test_fit_records_the_parameters_it_used(tree):
+    run_fit(tree, REDSHIFT)
+    used = json.loads((tree / "fit_results_z" / f"{SPECTRUM.stem}_pars_used.json").read_text())
+    assert used["use_exact_z"] == 1
+    assert used["z_exact"] == REDSHIFT
+    assert used["lower_lam"] == 4000 and used["upper_lam"] == 9500
+
+
+def test_fit_rejects_a_spectrum_that_is_too_short(tree, tmp_path):
+    short = tmp_path / "short.ascii"
+    short.write_text("".join(f"{4000.0 + i} 1.0\n" for i in range(40)))
+    proc = subprocess.run(
+        [sys.executable, "run.py", str(short), str(REDSHIFT), "4000", "9500"],
+        cwd=tree,
+        env={
+            **os.environ,
+            "NGSFCONFIG": str(tree / "config" / "parameters.json"),
+            "PYTHONPATH": str(tree),
+            "MPLBACKEND": "Agg",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode != 0
+    assert "too short to fit" in proc.stdout + proc.stderr

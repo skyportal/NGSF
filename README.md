@@ -18,6 +18,10 @@ fitting.
 
 ## Requierments
 
+These are minimum versions, not pins. NGSF runs on the current release of each
+of these — the fitter is tested on Python 3.13 with numpy 2, which is the
+stack `containers/Dockerfile` installs.
+
 - `Python version: 3.7.1`
 - `numpy version: 1.21.2`
 - `scipy version: 1.7.1`
@@ -28,6 +32,9 @@ fitting.
 - `extinction version: 0.4.6`
 - `requests version: 2.32.3`
 - `simplejson version: 3.19.3`
+
+`requests` and `simplejson` are only needed for the Fritz scripts
+(`download_fit_post.py`, `fritz_func.py`); the fitter itself does not use them.
 
 
 # To run one object
@@ -177,6 +184,31 @@ the git repository).
 
 `"fritz_token"`: Your Fritz token. Can be generated from your profile page on Fritz. 
 
+
+# Container
+
+`containers/Dockerfile` builds a self-contained NGSF runtime: the code, its
+dependencies, and the WISeREP template bank baked in at `/opt/ngsf-bank`. It
+needs no `bank_dir` to be set and no Fritz token, so it can run anywhere — it is
+what the [osg-skyportal-plugin](https://github.com/mcoughlin/osg-skyportal-plugin)
+submits to the Open Science Grid.
+
+```bash
+docker buildx build --platform linux/amd64 -f containers/Dockerfile \
+  -t docker.io/<user>/ngsf:latest --push .
+```
+
+The build ends with an import + template-count check, so a broken runtime or an
+empty bank fails the build rather than a job. Two environment variables locate
+things inside the image, and callers override them to relocate either piece:
+
+- `NGSF_DIR` (default `/opt/NGSF`) — the code
+- `NGSF_BANK_DIR` (default `/opt/ngsf-bank`) — the template bank
+
+Note that `pkg_dir` in `config/parameters.json` is both the code root and the
+root the results are written under, so a caller running the image read-only must
+copy the tree somewhere writable and point `pkg_dir` there. `bank_dir` is only
+ever read and can stay in the image.
 
 # Further details about the code
 

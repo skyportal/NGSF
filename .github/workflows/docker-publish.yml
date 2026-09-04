@@ -1,0 +1,81 @@
+name: Build and push NGSF image
+
+# Pushes to Docker Hub only from main and version tags; every other ref builds
+# only, so a broken image fails the check without publishing. CVMFS mirrors the
+# published tag via a PR against opensciencegrid/cvmfs-singularity-sync.
+# Needs repo secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - containers/Dockerfile
+      - .dockerignore
+      - NGSF/**
+      - run.py
+      - NGSF_version.py
+      - config/**
+      - .github/workflows/docker-publish.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    # The build downloads and unpacks the 74 MB template bank.
+    timeout-minutes: 60
+    env:
+      PUBLISH: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      # The build stamps NGSF/.version from `git describe`, so it needs history.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: tags
+        env:
+          # Falls back to <login user>/ngsf when the repo variable isn't set.
+          DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          if [ "$PUBLISH" = "true" ]; then
+            repo="${DOCKERHUB_IMAGE:-${DOCKERHUB_USERNAME}/ngsf}"
+            echo "tags=${repo}:latest,${repo}:${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+          else
+            # Build-only: a local tag, so this needs no secrets to be set.
+            echo "tags=ngsf:ci" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: containers/Dockerfile
+          push: ${{ env.PUBLISH == 'true' }}
+          # Load locally on build-only runs so the smoke test can run it.
+          load: ${{ env.PUBLISH != 'true' }}
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The Dockerfile checks imports and the bank; this checks it can fit.
+      - name: Smoke-test the image
+        if: env.PUBLISH != 'true'
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /tmp ngsf:ci \
+            python /repo/containers/smoke_test.py

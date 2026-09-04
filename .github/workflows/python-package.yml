@@ -40,9 +40,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
 
-      # Not --system: setup-uv's interpreter is externally managed, so uv
-      # refuses to install into it.
-      - run: uv venv
+      # setup-uv already made .venv and exported VIRTUAL_ENV; --clear keeps this
+      # correct either way. Not --system: its interpreter is externally managed.
+      - run: uv venv --clear
       - run: uv pip install ".[test]"
 
       # Keyed on the URL alone: the bank is a fixed published archive.

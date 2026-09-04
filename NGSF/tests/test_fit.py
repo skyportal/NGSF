@@ -18,7 +18,10 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 BANK_PATH = REPO / "bank"
-BANK_URL = "https://www.wiserep.org/sites/default/files/supyfit_bank.zip"
+# WISeREP rate-limits; set NGSF_BANK_URL to a mirror to avoid depending on it.
+BANK_URL = os.environ.get(
+    "NGSF_BANK_URL", "https://www.wiserep.org/sites/default/files/supyfit_bank.zip"
+)
 SPECTRUM = REPO / "NGSF/tests/data/SN2021urb_2021-08-06_00-00-00_Keck1_LRIS_TNS.flm"
 REDSHIFT = 0.127
 
@@ -38,7 +41,14 @@ def bank():
         with zipfile.ZipFile(archive) as z:
             z.extractall(REPO)
     except Exception as e:  # noqa: BLE001 — no bank means the fit can't run at all
-        pytest.skip(f"template bank unavailable: {e}")
+        # Skipping keeps a WISeREP outage from blocking unrelated PRs, but a
+        # green run then proves nothing about the fit; set
+        # NGSF_REQUIRE_INTEGRATION=1 (CI, once the bank has a reliable mirror)
+        # to make an unavailable bank a failure instead.
+        message = f"template bank unavailable: {e}"
+        if os.environ.get("NGSF_REQUIRE_INTEGRATION"):
+            pytest.fail(message)
+        pytest.skip(message)
     finally:
         archive.unlink(missing_ok=True)
     return BANK_PATH

@@ -21,7 +21,14 @@ RUN cd /src \
     && rm -rf .git __pycache__ NGSF/__pycache__ SF_class.ipynb \
               fit_results fit_results_z spectra_to_fit
 
-RUN curl -fsSL -A "Mozilla/5.0" -o /tmp/bank.zip "$NGSF_BANK_URL" \
+# WISeREP rate-limits (403s under repeated pulls), so retry; point
+# NGSF_BANK_URL at a mirror to stop depending on it during a build.
+RUN for attempt in 1 2 3 4 5; do \
+        curl -fsSL -A "Mozilla/5.0" -o /tmp/bank.zip "$NGSF_BANK_URL" && break; \
+        echo "bank download attempt $attempt failed; retrying in $((attempt * 20))s"; \
+        rm -f /tmp/bank.zip; sleep $((attempt * 20)); \
+    done \
+    && test -s /tmp/bank.zip \
     && unzip -q /tmp/bank.zip -d /tmp/unpacked \
     && mv /tmp/unpacked/bank /bank \
     && rm -rf /tmp/bank.zip /tmp/unpacked

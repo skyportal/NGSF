@@ -1,6 +1,4 @@
-# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
-# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
-
+# Unit tests + lint. Only the integration test needs the (cached) template bank.
 name: Unit Test NGSF
 
 on:
@@ -11,45 +9,58 @@ on:
     branches:
       - main
 
-jobs:
-  build:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+jobs:
+  lint:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v5
+      - run: uvx ruff check --output-format=github .
+      - run: uvx ruff format --check .
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        python-version: [3.8, 3.9]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-    - name: Checkout branch being tested
-      uses: actions/checkout@v2
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Get pip cache dir
-      id: pip-cache
-      run: |
-        python -m pip install --upgrade pip setuptools wheel
-        echo "::set-output name=dir::$(pip cache dir)"
-    - name: pip cache
-      uses: actions/cache@v2
-      with:
-        path: ${{ steps.pip-cache.outputs.dir }}
-        key: ${{ runner.os }}-pip-2-${{ hashFiles('**/setup.py', '**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-2-
-    - name: Install dependencies
-      run: |
-        python -m pip install pytest pytest-cov flake8
-        python -m pip install .
-    - name: Lint with flake8
-      run: |
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude docs
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude docs,versioneer.py,NGSF/_version.py,NGSF/tests,NGSF/*/__init__.py
-    - name: Test with pytest
-      run: |
-        pytest
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v1
+      - uses: actions/checkout@v5
+        with:
+          # NGSF_version reads `git describe`, so the tests need history.
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      # setup-uv already made .venv and exported VIRTUAL_ENV; --clear keeps this
+      # correct either way. Not --system: its interpreter is externally managed.
+      - run: uv venv --clear
+      - run: uv pip install ".[test]"
+
+      # Keyed on the URL alone: the bank is a fixed published archive.
+      - name: Cache template bank
+        id: bank
+        uses: actions/cache@v4
+        with:
+          path: bank
+          key: ngsf-bank-supyfit-v1
+
+      - name: Test
+        env:
+          MPLBACKEND: Agg
+        run: .venv/bin/pytest -v --cov=NGSF --cov-report=xml
+
+      - name: Upload coverage
+        if: matrix.python-version == '3.13'
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+        continue-on-error: true

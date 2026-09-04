@@ -1,20 +1,19 @@
+import json
 import os
 import sys
-import json
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import interpolate
 from scipy.ndimage import gaussian_filter1d
 
-
-from NGSF.SF_functions import Alam, all_parameter_space, remove_telluric,\
-    mask_gal_lines
-from NGSF.Header_Binnings import kill_header, kill_header_and_bin
+import NGSF_version
 from NGSF.error_routines import linear_error, savitzky_golay
 from NGSF.get_metadata import Metadata
+from NGSF.Header_Binnings import kill_header, kill_header_and_bin
 from NGSF.params import Parameters
-import NGSF_version
+from NGSF.SF_functions import Alam, all_parameter_space, mask_gal_lines, remove_telluric
 
 try:
     configfile = os.environ["NGSFCONFIG"]
@@ -35,12 +34,12 @@ if z != 100:
     ngsf_cfg["use_exact_z"] = 1
     ngsf_cfg["z_exact"] = z
     ngsf_cfg["mask_galaxy_lines"] = 1
-    ngsf_cfg["saving_results_path"] = str(ngsf_cfg['pkg_dir'] + 'fit_results_z/')
+    ngsf_cfg["saving_results_path"] = str(ngsf_cfg["pkg_dir"] + "fit_results_z/")
 
 elif z == 100:
     ngsf_cfg["use_exact_z"] = 0
     ngsf_cfg["mask_galaxy_lines"] = 0
-    ngsf_cfg["saving_results_path"] = str(ngsf_cfg['pkg_dir'] + 'fit_results/')
+    ngsf_cfg["saving_results_path"] = str(ngsf_cfg["pkg_dir"] + "fit_results/")
 
 
 parameters = Parameters(ngsf_cfg)
@@ -61,12 +60,10 @@ class Superfit:
         how_many_bins = 0
 
         if obj_original_res > 10:
-            how_many_bins = +(self.spectrum[:,
-                              0][-1] - self.spectrum[:, 0][0]) / 30
+            how_many_bins = +(self.spectrum[:, 0][-1] - self.spectrum[:, 0][0]) / 30
 
         elif obj_original_res <= 10:
-            how_many_bins = +(self.spectrum[:,
-                              0][-1] - self.spectrum[:, 0][0]) / 10
+            how_many_bins = +(self.spectrum[:, 0][-1] - self.spectrum[:, 0][0]) / 10
 
         # Check if spectrum is short
 
@@ -75,11 +72,10 @@ class Superfit:
 
         self.lamda, self.flux = self.spectrum[:, 0], self.spectrum[:, 1]
 
-        self.binned_name = os.path.join(parameters.save_results_path,
-                                        self.name_no_extension +
-                                        "_binned.ascii")
-        self.results_name = os.path.join(parameters.save_results_path,
-                                         self.name_no_extension)
+        self.binned_name = os.path.join(
+            parameters.save_results_path, self.name_no_extension + "_binned.ascii"
+        )
+        self.results_name = os.path.join(parameters.save_results_path, self.name_no_extension)
 
         self.results_path = self.results_name + ".csv"
         self.results = None
@@ -98,19 +94,19 @@ class Superfit:
         object_spec[:, 1] = object_spec[:, 1] / np.nanmedian(object_spec[:, 1])
 
         int_obj = interpolate.interp1d(
-            object_spec[:, 0], object_spec[:, 1], bounds_error=False,
-            fill_value="nan"
+            object_spec[:, 0], object_spec[:, 1], bounds_error=False, fill_value="nan"
         )
         self.int_obj = int_obj(parameters.lam)
 
         self.metadata = Metadata()
 
         # Make json file with the used parameters
-        parfile = os.path.join(parameters.save_results_path,
-                               self.name_no_extension + "_pars_used.json")
+        parfile = os.path.join(
+            parameters.save_results_path, self.name_no_extension + "_pars_used.json"
+        )
         with open(parfile, "w") as fp:
             json.dump(ngsf_cfg, fp)
-        print("\nParameters used written to: {}".format(parfile))
+        print(f"\nParameters used written to: {parfile}")
 
     def plot(self):
 
@@ -146,10 +142,7 @@ class Superfit:
                 fontsize=15,
                 fontweight="bold",
             )
-            plt.plot(
-                self.lamda, self.flux / np.median(self.flux), "r",
-                label=str(self.name)
-            )
+            plt.plot(self.lamda, self.flux / np.median(self.flux), "r", label=str(self.name))
             plt.plot(
                 data[:, 0],
                 data[:, 1] / np.median(data[:, 1]),
@@ -167,8 +160,7 @@ class Superfit:
         plt.figure(figsize=(7 * np.sqrt(2), 7))
         plt.ylabel("Flux arbitrary", fontsize=14)
         plt.xlabel("Lamda", fontsize=14)
-        plt.title("Savitzky-Golay error estimation", fontsize=15,
-                  fontweight="bold")
+        plt.title("Savitzky-Golay error estimation", fontsize=15, fontweight="bold")
         plt.fill_between(
             data[:, 0],
             data[:, 1] / np.median(data[:, 1]) - error,
@@ -176,10 +168,7 @@ class Superfit:
             color="#FF4500",
             label="error",
         )
-        plt.plot(
-            data[:, 0], data[:, 1] / np.median(data[:, 1]), "k",
-            label=str(self.name)
-        )
+        plt.plot(data[:, 0], data[:, 1] / np.median(data[:, 1]), "k", label=str(self.name))
         plt.legend(framealpha=1, frameon=True, fontsize=12)
         # plt.savefig(str(self.name) + '_sg.pdf' )
 
@@ -199,10 +188,7 @@ class Superfit:
             color="#03AC13",
             label="error",
         )
-        plt.plot(
-            data[:, 0], data[:, 1] / np.median(data[:, 1]), "k",
-            label=str(self.name)
-        )
+        plt.plot(data[:, 0], data[:, 1] / np.median(data[:, 1]), "k", label=str(self.name))
         plt.legend(framealpha=1, frameon=True, fontsize=12)
 
     def mask_gal_lines_and_telluric(self):
@@ -214,21 +200,15 @@ class Superfit:
         plt.title("Masked Telluric and Galaxy lines", fontsize=17)
         plt.ylabel("Flux", fontsize=16)
         plt.xlabel("Lamda", fontsize=16)
-        plt.plot(
-            masked_spectrum[:, 0], masked_spectrum[:, 1], "k",
-            label=str(self.name)
-        )
+        plt.plot(masked_spectrum[:, 0], masked_spectrum[:, 1], "k", label=str(self.name))
         plt.legend(framealpha=1, frameon=True, fontsize=12)
 
     def superfit(self):
 
         try:
             print(
-                "Running optimization for spectrum file: {0}\n"
-                "With resolution = {1} A, from {2} to {3} A".format(
-                    self.name, parameters.resolution,
-                    parameters.lower, parameters.upper
-                )
+                f"Running optimization for spectrum file: {self.name}\n"
+                f"With resolution = {parameters.resolution} A, from {parameters.lower} to {parameters.upper} A"
             )
 
             kill_header_and_bin(
@@ -254,14 +234,10 @@ class Superfit:
             )
 
         except Exception:
-
             resolution = 30
-            print("NGSF failed. Retrying for resolution = {0} Å"
-                  .format(resolution))
+            print(f"NGSF failed. Retrying for resolution = {resolution} Å")
 
-            kill_header_and_bin(
-                self.original_path_name, resolution, save_bin=self.binned_name
-            )
+            kill_header_and_bin(self.original_path_name, resolution, save_bin=self.binned_name)
 
             all_parameter_space(
                 self.int_obj,
@@ -284,15 +260,13 @@ class Superfit:
         result_number = 0
 
         if parameters.n > len(self.results):
-
             result_number = result_number + len(self.results)
 
         elif len(self.results) >= parameters.n:
-
             result_number = result_number + parameters.n
 
         for j in range(result_number):
-            print("Outputting result {}".format(j))
+            print(f"Outputting result {j}")
 
             row = self.results.iloc[j]
 
@@ -321,10 +295,10 @@ class Superfit:
 
             int_obj = self.int_obj
 
-            sn_name = os.path.join(parameters.bank_dir, "binnings", "10A",
-                                   "sne",  subtype,  sn_best_fullname)
-            hg_name = os.path.join(parameters.bank_dir, "binnings", "10A",
-                                   "gal", hg_name)
+            sn_name = os.path.join(
+                parameters.bank_dir, "binnings", "10A", "sne", subtype, sn_best_fullname
+            )
+            hg_name = os.path.join(parameters.bank_dir, "binnings", "10A", "gal", hg_name)
 
             # print(sn_name)
 
@@ -343,33 +317,26 @@ class Superfit:
             # reshifted_hostf   =  host[:,1]/(z+1)
 
             redshifted_nova = nova[:, 0] * (z + 1)
-            extinct_nova = (
-                nova[:, 1] * 10 ** (-0.4 * extmag * Alam(nova[:, 0])) / (z + 1)
-            )
+            extinct_nova = nova[:, 1] * 10 ** (-0.4 * extmag * Alam(nova[:, 0])) / (z + 1)
 
             reshifted_host = host[:, 0] * (z + 1)
             reshifted_hostf = host[:, 1] / (z + 1)
 
             nova_int = interpolate.interp1d(
-                redshifted_nova, extinct_nova, bounds_error=False,
-                fill_value="nan"
+                redshifted_nova, extinct_nova, bounds_error=False, fill_value="nan"
             )
             host_int = interpolate.interp1d(
-                reshifted_host, reshifted_hostf, bounds_error=False,
-                fill_value="nan"
+                reshifted_host, reshifted_hostf, bounds_error=False, fill_value="nan"
             )
-            host_nova = bb * nova_int(parameters.lam) + \
-                        dd * host_int(parameters.lam)
+            host_nova = bb * nova_int(parameters.lam) + dd * host_int(parameters.lam)
 
             sn_type = short_name[: short_name.find("/")]
-            hg_name = hg_name[hg_name.rfind("/") + 1:]
-            subclass = short_name[short_name.find("/") + 1:
-                                  short_name.rfind("/")]
-            phase = str(short_name[short_name.rfind(":") + 1: -1])
+            hg_name = hg_name[hg_name.rfind("/") + 1 :]
+            subclass = short_name[short_name.find("/") + 1 : short_name.rfind("/")]
+            phase = str(short_name[short_name.rfind(":") + 1 : -1])
 
             plt.figure(figsize=(8 * np.sqrt(2), 8))
-            plt.plot(parameters.lam, int_obj, "r",
-                     label="Input object: " + self.name)
+            plt.plot(parameters.lam, int_obj, "r", label="Input object: " + self.name)
             plt.plot(
                 parameters.lam,
                 host_nova,
@@ -382,13 +349,12 @@ class Superfit:
                 + phase
                 + "\nHost: "
                 + str(hg_name)
-                + "\nSN contrib: {0: .1f}%".format(100 * sn_cont),
+                + f"\nSN contrib: {100 * sn_cont: .1f}%",
             )
             plt.legend(framealpha=1, frameon=True, fontsize=12)
             plt.ylabel("Flux arbitrary", fontsize=14)
             plt.xlabel("Lamda", fontsize=14)
-            plt.title("Best fit for z = " + str(z), fontsize=15,
-                      fontweight="bold")
+            plt.title("Best fit for z = " + str(z), fontsize=15, fontweight="bold")
 
             if parameters.show_plot_png:
                 plt.savefig(self.results_name + "_ngsf" + str(j) + ".png")
@@ -403,7 +369,7 @@ class Superfit:
         if os.path.isfile(self.results_path):
             results = self.results
         else:
-            raise Exception("Do the superfit! <( @_@" ")> ")
+            raise Exception("Do the superfit! <( @_@)> ")
 
         return results
 
@@ -434,10 +400,8 @@ class Superfit:
 
         int_obj = self.int_obj
 
-        sn_name = os.path.join(
-            self.bank_dir, "binnings", "10A", "sne", subtype, sn_best_fullname)
-        hg_name = os.path.join(
-            self.bank_dir, "binnings", "10A", "gal", hg_name)
+        sn_name = os.path.join(self.bank_dir, "binnings", "10A", "sne", subtype, sn_best_fullname)
+        hg_name = os.path.join(self.bank_dir, "binnings", "10A", "gal", hg_name)
 
         nova = kill_header(sn_name)
         nova[:, 1] = nova[:, 1] / np.nanmedian(nova[:, 1])
@@ -447,27 +411,25 @@ class Superfit:
 
         # Interpolate supernova and host galaxy
         redshifted_nova = nova[:, 0] * (z + 1)
-        extinct_nova = nova[:, 1] * 10 ** (-0.4 * extmag *
-                                           Alam(nova[:, 0])) / (z + 1)
+        extinct_nova = nova[:, 1] * 10 ** (-0.4 * extmag * Alam(nova[:, 0])) / (z + 1)
 
         reshifted_host = host[:, 0] * (z + 1)
         reshifted_hostf = host[:, 1] / (z + 1)
 
         nova_int = interpolate.interp1d(
-            redshifted_nova, extinct_nova, bounds_error=False, fill_value="nan")
+            redshifted_nova, extinct_nova, bounds_error=False, fill_value="nan"
+        )
         host_int = interpolate.interp1d(
-            reshifted_host, reshifted_hostf, bounds_error=False,
-            fill_value="nan")
-        host_nova = bb * nova_int(parameters.lam) + \
-                    dd * host_int(parameters.lam)
+            reshifted_host, reshifted_hostf, bounds_error=False, fill_value="nan"
+        )
+        host_nova = bb * nova_int(parameters.lam) + dd * host_int(parameters.lam)
 
         sn_type = short_name[: short_name.find("/")]
-        hg_name = hg_name[hg_name.rfind("/") + 1:]
-        subclass = short_name[short_name.find("/") + 1: short_name.rfind("/")]
-        phase = str(short_name[short_name.rfind(":") + 1: -1])
+        hg_name = hg_name[hg_name.rfind("/") + 1 :]
+        subclass = short_name[short_name.find("/") + 1 : short_name.rfind("/")]
+        phase = str(short_name[short_name.rfind(":") + 1 : -1])
         plt.figure(figsize=(8 * np.sqrt(2), 8))
-        plt.plot(parameters.lam, int_obj, "r",
-                 label="Input object: " + self.name)
+        plt.plot(parameters.lam, int_obj, "r", label="Input object: " + self.name)
         plt.plot(
             parameters.lam,
             host_nova,
@@ -480,7 +442,7 @@ class Superfit:
             + phase
             + "\nHost: "
             + str(hg_name)
-            + "\nSN contrib: {0: .1f}%".format(100 * sn_cont),
+            + f"\nSN contrib: {100 * sn_cont: .1f}%",
         )
         plt.legend(framealpha=1, frameon=True, fontsize=12)
         plt.ylabel("Flux arbitrary", fontsize=14)

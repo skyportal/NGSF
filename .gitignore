@@ -1,4 +1,23 @@
-venv
-.idea
-bank
-results
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+venv/
+.venv/
+.idea/
+.vscode/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+
+# Run outputs. The example under fit_results_z/ is tracked (the README embeds it).
+bank/
+results/
+supyfit_bank.zip
+fit_results/
+fit_results_z/
+spectra_to_fit/
+NGSF/.version

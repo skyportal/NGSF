@@ -1,4 +1,5 @@
 import statistics
+
 import numpy as np
 import scipy.signal as mf
 
@@ -28,7 +29,6 @@ def linear_error(spec_object):
     r = []
 
     for n in range(len(lam_new)):
-
         a = np.polyfit(lam_new[n], flux_new[n], 1)
         m.append(a[0])
         b.append(a[1])
@@ -57,20 +57,17 @@ def savitzky_golay(spec):
     y = spec[:, 1] / spec[:, 1].mean()
 
     # Find residuals from smooth line
-    smooth = mf.savgol_filter(
-        y, 31, 3, deriv=0, delta=1.0, axis=-1, mode="nearest", cval=0.0
-    )
+    smooth = mf.savgol_filter(y, 31, 3, deriv=0, delta=1.0, axis=-1, mode="nearest", cval=0.0)
     resid = y - smooth
 
     # Calculate the variance
     def moving_average(a, n=3):
         ret = np.cumsum(a, dtype=float)
         ret[n:] = ret[n:] - ret[:-n]
-        return ret[n - 1:] / n
+        return ret[n - 1 :] / n
 
     mov_var = moving_average(resid**2, n=100)
-    mov_var = np.concatenate((mov_var, [mov_var[-1]] * (resid.size -
-                                                        mov_var.size)))
+    mov_var = np.concatenate((mov_var, [mov_var[-1]] * (resid.size - mov_var.size)))
     err_std = np.sqrt(mov_var)
 
     for i in range(0, len(err_std)):

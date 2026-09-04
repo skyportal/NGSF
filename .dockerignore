@@ -1,0 +1,6 @@
+fit_results
+fit_results_z
+spectra_to_fit
+bank
+*.zip
+**/__pycache__

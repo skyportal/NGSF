@@ -17,7 +17,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v5
       - run: uvx ruff check --output-format=github .
       - run: uvx ruff format --check .
@@ -30,7 +30,7 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # NGSF_version reads `git describe`, so the tests need history.
           fetch-depth: 0
@@ -40,7 +40,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
 
-      - run: uv pip install --system ".[test]"
+      # Not --system: setup-uv's interpreter is externally managed, so uv
+      # refuses to install into it.
+      - run: uv venv
+      - run: uv pip install ".[test]"
 
       # Keyed on the URL alone: the bank is a fixed published archive.
       - name: Cache template bank
@@ -53,7 +56,7 @@ jobs:
       - name: Test
         env:
           MPLBACKEND: Agg
-        run: pytest -v --cov=NGSF --cov-report=xml
+        run: .venv/bin/pytest -v --cov=NGSF --cov-report=xml
 
       - name: Upload coverage
         if: matrix.python-version == '3.13'

@@ -33,7 +33,7 @@ jobs:
       PUBLISH: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
     steps:
       # The build stamps NGSF/.version from `git describe`, so it needs history.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 

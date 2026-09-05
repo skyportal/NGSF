@@ -361,6 +361,15 @@ class Superfit:
             else:
                 plt.savefig(self.results_name + "_ngsf" + str(j) + ".pdf")
 
+            # The plotted model as data, so callers can overlay the fit on the
+            # observed spectrum instead of only showing the rendered plot.
+            # Outside the branch above: the data is wanted whatever the plot format.
+            np.savetxt(
+                self.results_name + "_ngsf" + str(j) + "_model.txt",
+                np.column_stack([parameters.lam, host_nova]),
+                header="wavelength(A) model_flux",
+            )
+
             if parameters.show == 1:
                 plt.show()
 

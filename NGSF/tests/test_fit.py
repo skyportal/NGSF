@@ -109,6 +109,31 @@ def test_fit_at_fixed_redshift(tree):
     assert sorted(out_dir.glob(f"{SPECTRUM.stem}_ngsf*.png"))
 
 
+def test_fit_writes_the_model_spectrum_for_each_ranked_match(tree):
+    # Consumers overlay this on the observed spectrum, so the name and the
+    # two-column shape are a contract, not an implementation detail.
+    rows, out_dir = run_fit(tree, REDSHIFT)
+
+    models = sorted(out_dir.glob(f"{SPECTRUM.stem}_ngsf*_model.txt"))
+    assert len(models) == len(sorted(out_dir.glob(f"{SPECTRUM.stem}_ngsf*.png")))
+
+    for model in models:
+        lam, flux = [], []
+        for line in model.read_text().splitlines():
+            if line.startswith("#"):
+                continue
+            w, f = line.split()
+            lam.append(float(w))
+            flux.append(float(f))
+        assert len(lam) > 100
+        assert lam == sorted(lam)
+        assert lam[0] >= 4000 and lam[-1] <= 9500  # the fitted range
+        # Median-normalized like the binned observation, so an overlay lines up.
+        finite = [f for f in flux if f == f]
+        assert finite, f"{model.name} is all NaN"
+        assert 0.1 < sum(finite) / len(finite) < 10
+
+
 def test_fit_records_the_parameters_it_used(tree):
     run_fit(tree, REDSHIFT)
     used = json.loads((tree / "fit_results_z" / f"{SPECTRUM.stem}_pars_used.json").read_text())

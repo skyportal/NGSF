@@ -8,8 +8,9 @@
 # Staged so neither .git (38 MB) nor the bank zip lands in a final-image layer.
 FROM debian:bookworm-slim AS assets
 
-# WISeREP serves an error page unless the request looks like a browser.
-ARG NGSF_BANK_URL=https://www.wiserep.org/sites/default/files/supyfit_bank.zip
+# Mirror of the WISeREP archive: wiserep.org rate-limits and 403s under repeated
+# automated pulls, which breaks builds. Point this at WISeREP for a fresh bank.
+ARG NGSF_BANK_URL=https://github.com/skyportal/NGSF/releases/download/template-bank-v1/supyfit_bank.zip
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl unzip git \
@@ -21,8 +22,7 @@ RUN cd /src \
     && rm -rf .git __pycache__ NGSF/__pycache__ SF_class.ipynb \
               fit_results fit_results_z spectra_to_fit
 
-# WISeREP rate-limits (403s under repeated pulls), so retry; point
-# NGSF_BANK_URL at a mirror to stop depending on it during a build.
+# Retry anyway: a mirror can still blip, and a half-built image is worse.
 RUN for attempt in 1 2 3 4 5; do \
         curl -fsSL -A "Mozilla/5.0" -o /tmp/bank.zip "$NGSF_BANK_URL" && break; \
         echo "bank download attempt $attempt failed; retrying in $((attempt * 20))s"; \

@@ -56,6 +56,9 @@ jobs:
       - name: Test
         env:
           MPLBACKEND: Agg
+          # The bank is mirrored now, so an unavailable bank is a real failure —
+          # without this a green run can mean the fit never ran.
+          NGSF_REQUIRE_INTEGRATION: "1"
         run: .venv/bin/pytest -v --cov=NGSF --cov-report=xml
 
       - name: Upload coverage

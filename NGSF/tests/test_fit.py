@@ -18,9 +18,10 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 BANK_PATH = REPO / "bank"
-# WISeREP rate-limits; set NGSF_BANK_URL to a mirror to avoid depending on it.
+# Mirror of the WISeREP archive; wiserep.org 403s under repeated automated pulls.
 BANK_URL = os.environ.get(
-    "NGSF_BANK_URL", "https://www.wiserep.org/sites/default/files/supyfit_bank.zip"
+    "NGSF_BANK_URL",
+    "https://github.com/skyportal/NGSF/releases/download/template-bank-v1/supyfit_bank.zip",
 )
 SPECTRUM = REPO / "NGSF/tests/data/SN2021urb_2021-08-06_00-00-00_Keck1_LRIS_TNS.flm"
 REDSHIFT = 0.127

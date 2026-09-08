@@ -152,6 +152,40 @@ def error_obj(kind, lam, object_to_fit):
     return sigma
 
 
+# Result columns. Module-level so rows can be accumulated cheaply in the hot
+# loop and turned into a single table once, instead of one table per row.
+RESULT_NAMES = (
+    "SPECTRUM",
+    "GALAXY",
+    "SN",
+    "CONST_SN",
+    "CONST_GAL",
+    "Z",
+    "A_v",
+    "Phase",
+    "Band",
+    "Frac(SN)",
+    "Frac(gal)",
+    "CHI2/dof",
+    "CHI2/dof2",
+)
+RESULT_DTYPES = (
+    "S200",
+    "S200",
+    "S200",
+    "f",
+    "f",
+    "f",
+    "f",
+    "S200",
+    "S200",
+    "f",
+    "f",
+    "f",
+    "f",
+)
+
+
 def core(
     int_obj,
     z,
@@ -204,15 +238,17 @@ def core(
 
     # Apply linear algebra witchcraft
 
-    c = 1 / (np.nansum(sn**2, 2) * np.nansum(gal**2, 2) - np.nansum(gal * sn, 2) ** 2)
-    b = c * (
-        np.nansum(gal**2, 2) * np.nansum(sn * int_obj, 2)
-        - np.nansum(gal * sn, 2) * np.nansum(gal * int_obj, 2)
-    )
-    d = c * (
-        np.nansum(sn**2, 2) * np.nansum(gal * int_obj, 2)
-        - np.nansum(gal * sn, 2) * np.nansum(sn * int_obj, 2)
-    )
+    # Each of these five sums was being recomputed two or three times over; every
+    # np.nansum copies the whole cube to strip NaNs, so they are worth holding.
+    sn_sq = np.nansum(sn**2, 2)
+    gal_sq = np.nansum(gal**2, 2)
+    sn_gal = np.nansum(gal * sn, 2)
+    sn_obj = np.nansum(sn * int_obj, 2)
+    gal_obj = np.nansum(gal * int_obj, 2)
+
+    c = 1 / (sn_sq * gal_sq - sn_gal**2)
+    b = c * (gal_sq * sn_obj - sn_gal * gal_obj)
+    d = c * (sn_sq * gal_obj - sn_gal * sn_obj)
 
     b[b < 0] = np.nan
     d[d < 0] = np.nan
@@ -223,15 +259,17 @@ def core(
 
     # Obtain number of degrees of freedom
 
-    a = ((int_obj - (sn_b * sn + gal_d * gal)) / sigma) ** 2
-    a = np.isnan(a)
-    times = np.nansum(a, 2)
-    times = len(lam) - times
+    # The residual was built twice, once for the overlap count and once for chi2.
+    residual = int_obj - (sn_b * sn + gal_d * gal)
+
+    a = np.isnan((residual / sigma) ** 2)
+    # a is boolean, so there is nothing for nansum to strip.
+    times = len(lam) - np.sum(a, 2)
 
     overlap = times / len(lam) > minimum_overlap
 
     # Obtain and reduce chi2
-    chi2 = np.nansum(((int_obj - (sn_b * sn + gal_d * gal)) ** 2 / sigma**2), 2)
+    chi2 = np.nansum((residual**2 / sigma**2), 2)
 
     # avoid short overlaps
     chi2[~overlap] = np.inf
@@ -249,9 +287,8 @@ def core(
     index = np.argsort(reduchi2_1d)
 
     redchi2 = []
-    all_tables = []
+    rows = []
 
-    outputs = None
     for i in range(iterations):
         idx = np.unravel_index(index[i], reduchi2.shape)
         rchi2 = reduchi2[idx]
@@ -280,7 +317,9 @@ def core(
         the_phase = supernova_file[ii + 1 : -1]
         the_band = supernova_file[-1]
 
-        output = table.Table(
+        # Same np.array(...) as the table used to be built from, so the values
+        # go through the identical string coercion and the output is unchanged.
+        rows.append(
             np.array(
                 [
                     os.path.basename(name),
@@ -297,44 +336,10 @@ def core(
                     reduchi2_once[idx],
                     reduchi2[idx],
                 ]
-            ),
-            names=(
-                "SPECTRUM",
-                "GALAXY",
-                "SN",
-                "CONST_SN",
-                "CONST_GAL",
-                "Z",
-                "A_v",
-                "Phase",
-                "Band",
-                "Frac(SN)",
-                "Frac(gal)",
-                "CHI2/dof",
-                "CHI2/dof2",
-            ),
-            dtype=(
-                "S200",
-                "S200",
-                "S200",
-                "f",
-                "f",
-                "f",
-                "f",
-                "S200",
-                "S200",
-                "f",
-                "f",
-                "f",
-                "f",
-            ),
+            )
         )
 
-        all_tables.append(output)
-
-        outputs = table.vstack(all_tables)
-
-    return outputs, redchi2
+    return rows, redchi2
 
 
 def mask_gal_lines(data, z_obj):
@@ -522,12 +527,12 @@ def all_parameter_space(
             **kwargs,
         )
 
-        results.append(a)
+        results.extend(a)
 
     if verbose:
         print("\nDone.")
 
-    result = table.vstack(results)
+    result = table.Table(rows=results, names=RESULT_NAMES, dtype=RESULT_DTYPES)
 
     result.sort("CHI2/dof2")
 

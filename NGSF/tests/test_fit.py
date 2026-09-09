@@ -172,6 +172,36 @@ def test_fit_handles_a_spectrum_narrower_than_the_fitted_range(tree, tmp_path):
     assert ranked == sorted(ranked), "results are not ranked"
 
 
+def test_fit_refuses_a_spectrum_that_barely_overlaps_the_range(tree, tmp_path):
+    """Too little overlap must fail loudly. It used to write ten rows of
+    infinities that sort into an arbitrary order and read like a real ranking,
+    so callers would annotate a source with a classification built on nothing."""
+    sparse = tmp_path / "sparse.ascii"
+    kept = [
+        line
+        for line in SPECTRUM.read_text().splitlines()
+        if line.strip() and not line.startswith("#") and float(line.split()[0]) < 7000
+    ]
+    sparse.write_text("\n".join(kept) + "\n")
+
+    proc = subprocess.run(
+        [sys.executable, "run.py", str(sparse), str(REDSHIFT), "4000", "9500"],
+        cwd=tree,
+        env={
+            **os.environ,
+            "NGSFCONFIG": str(tree / "config" / "parameters.json"),
+            "PYTHONPATH": str(tree),
+            "MPLBACKEND": "Agg",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode != 0, "a spectrum with too little overlap was fit anyway"
+    assert "cannot be fit over this range" in proc.stdout + proc.stderr
+    # and no results table is left behind for a caller to read as a real answer
+    assert not (tree / "fit_results_z" / "sparse.csv").exists()
+
+
 def test_fit_records_the_parameters_it_used(tree):
     run_fit(tree, REDSHIFT)
     used = json.loads((tree / "fit_results_z" / f"{SPECTRUM.stem}_pars_used.json").read_text())

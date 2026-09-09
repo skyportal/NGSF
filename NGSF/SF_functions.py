@@ -582,6 +582,18 @@ def all_parameter_space(
 
     result = table.Table(rows=results, names=RESULT_NAMES, dtype=RESULT_DTYPES)
 
+    # When no template pair clears minimum_overlap every chi2 is infinite, and
+    # sorting infinities yields an arbitrary "ranking" that reads like a real
+    # result. Refuse instead: the spectrum does not cover enough of the fitted
+    # range to say anything.
+    if not np.isfinite(np.asarray(result["CHI2/dof2"], dtype=float)).any():
+        raise TypeError(
+            "No template overlaps this spectrum by more than "
+            f"{100 * kwargs['minimum_overlap']:.0f}% of the fitted range "
+            f"({lam[0]:.0f}-{lam[-1]:.0f} A); it cannot be fit over this range. "
+            "Fit a narrower range that the spectrum actually covers."
+        )
+
     result.sort("CHI2/dof2")
 
     result = table.unique(result, keys="SN", keep="first")

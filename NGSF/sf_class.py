@@ -38,7 +38,12 @@ if z != 100:
 
 elif z == 100:
     ngsf_cfg["use_exact_z"] = 0
-    ngsf_cfg["mask_galaxy_lines"] = 0
+    # A free scan has no fitted redshift to place host lines at, so masking is
+    # only possible when the caller supplies one (e.g. the catalog value). This
+    # is the pass that measures z, and the ten host emission lines are absent
+    # from every SN template, so leaving them in puts a large unexplained
+    # residual right where the redshift is being decided.
+    ngsf_cfg["mask_galaxy_lines"] = 1 if ngsf_cfg.get("mask_host_lines_z") is not None else 0
     ngsf_cfg["saving_results_path"] = str(ngsf_cfg["pkg_dir"] + "fit_results/")
 
 
@@ -80,12 +85,19 @@ class Superfit:
         self.results_path = self.results_name + ".csv"
         self.results = None
 
+        # An explicit masking redshift wins; otherwise the fit's own exact z.
+        self.host_lines_z = (
+            parameters.mask_host_lines_z
+            if parameters.mask_host_lines_z is not None
+            else parameters.redshift
+        )
+
         object_spec = None
         if parameters.mask_galaxy_lines == 1 and parameters.mask_telluric == 1:
-            object_spec = mask_gal_lines(self.spectrum, parameters.redshift)
+            object_spec = mask_gal_lines(self.spectrum, self.host_lines_z)
             object_spec = remove_telluric(object_spec)
         if parameters.mask_galaxy_lines == 1 and parameters.mask_telluric == 0:
-            object_spec = mask_gal_lines(self.spectrum, parameters.redshift)
+            object_spec = mask_gal_lines(self.spectrum, self.host_lines_z)
         if parameters.mask_galaxy_lines == 0 and parameters.mask_telluric == 1:
             object_spec = remove_telluric(self.spectrum)
         if parameters.mask_galaxy_lines == 0 and parameters.mask_telluric == 0:
@@ -231,6 +243,8 @@ class Superfit:
                 save=self.results_name,
                 show=parameters.show,
                 minimum_overlap=parameters.minimum_overlap,
+                continuum_width=parameters.continuum_width,
+                continuum_order=parameters.continuum_order,
             )
 
         except Exception:
@@ -253,6 +267,8 @@ class Superfit:
                 save=self.results_name,
                 show=parameters.show,
                 minimum_overlap=parameters.minimum_overlap,
+                continuum_width=parameters.continuum_width,
+                continuum_order=parameters.continuum_order,
             )
 
         self.results = pd.read_csv(self.results_path)

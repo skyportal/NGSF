@@ -103,3 +103,34 @@ def test_extinction_cache_respects_template_length():
     # same name and A_v, coarser binning: must not reuse the 495-point row
     second = _extincted_flux("a-template", coarse, np.ones(165), 1.0)
     assert len(second) == 165, "cache returned a row of the wrong length"
+
+
+def test_polynomial_continuum_follows_shape_not_features():
+    """The continuum must track the overall shape while stepping over lines --
+    a running mean of comparable width would eat the broad SN features that
+    carry the classification, which is why the order matters."""
+    from NGSF.SF_functions import polynomial_continuum
+
+    lam = np.linspace(4000.0, 9500.0, 550)
+    smooth = 1.0 + 0.5 * np.exp(-(((lam - 6000) / 3000) ** 2))
+    flux = smooth.copy()
+    flux[270:280] *= 0.4  # a narrow absorption feature
+
+    continuum = polynomial_continuum(flux, lam, 3)
+    assert continuum.shape == flux.shape
+    # follows the smooth part
+    assert np.abs(continuum[:250] - smooth[:250]).max() < 0.15
+    # but does not dive into the line
+    assert continuum[275] > 0.8 * smooth[275]
+
+
+def test_polynomial_continuum_handles_rows_and_nan():
+    from NGSF.SF_functions import polynomial_continuum
+
+    lam = np.linspace(4000.0, 9500.0, 550)
+    rows = np.vstack([np.ones(550), 2 * np.ones(550)])
+    rows[0, :20] = np.nan  # a template that leaves the range
+    out = polynomial_continuum(rows, lam, 3)
+    assert out.shape == rows.shape
+    assert np.isfinite(out).all(), "NaN gaps must not poison the fit"
+    assert abs(out[1].mean() / out[0].mean() - 2.0) < 0.05

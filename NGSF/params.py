@@ -30,10 +30,22 @@ class Parameters:
         self.mask_galaxy_lines = data["mask_galaxy_lines"]
         self.mask_telluric = data["mask_telluric"]
 
-        if self.mask_galaxy_lines == 1 and len(self.redshift) != 1:
+        # Redshift at which to place the host emission lines. Normally the fit's
+        # own redshift, but during a free-redshift scan there isn't one yet, so a
+        # caller with a catalog redshift can supply it here and have the lines
+        # masked while z is being measured.
+        self.mask_host_lines_z = data.get("mask_host_lines_z", None)
+        if self.mask_host_lines_z is not None:
+            self.mask_host_lines_z = float(self.mask_host_lines_z)
+
+        if (
+            self.mask_galaxy_lines == 1
+            and len(self.redshift) != 1
+            and self.mask_host_lines_z is None
+        ):
             raise Exception(
                 "Make sure to pick an exact value for z in order to mask the "
-                "host lines accordingly!"
+                "host lines accordingly, or set mask_host_lines_z."
             )
 
         # Epochs
@@ -42,6 +54,19 @@ class Parameters:
 
         # Chose minimum overlap
         self.minimum_overlap = data["minimum_overlap"]
+
+        # Width, in resolution elements, of the running mean divided out of the
+        # object and templates before fitting. 0 disables it and fits the flux
+        # directly, which lets the galaxy component and A_v absorb continuum
+        # mismatch and match at the wrong redshift.
+        self.continuum_width = int(data.get("continuum_width", 0))
+        # Order of the log-wavelength polynomial continuum (SNID-style); takes
+        # precedence over continuum_width. 0 disables it, which is the default:
+        # measured over 25 spectra, flattening gained one redshift (11->12 within
+        # 0.02 of catalog) but lost three classifications (7->4), because the
+        # continuum shape itself carries typing information. Useful when the
+        # redshift is what you want, not a better fit overall.
+        self.continuum_order = int(data.get("continuum_order", 0))
 
         # Number of steps for A_v (do not change)
         self.Alam_high = data["Alam_high"]

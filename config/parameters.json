@@ -31,9 +31,13 @@
     "verbose": 0,
 
     "mask_galaxy_lines":0,
+    "mask_host_lines_z": null,
     "mask_telluric":1,
 
     "minimum_overlap": 0.7,
+
+    "continuum_width": 0,
+    "continuum_order": 0,
 
     "epoch_high": 0,
     "epoch_low" : 0,

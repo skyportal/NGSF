@@ -9,6 +9,7 @@ from astropy.io import ascii
 from extinction import apply
 from PyAstronomy import pyasl
 from scipy import interpolate
+from scipy.ndimage import uniform_filter1d
 
 import NGSF_version
 from NGSF.error_routines import linear_error, savitzky_golay
@@ -40,6 +41,53 @@ def _extincted_flux(key, one_sn, a_lam_sn, extcon):
         cached = one_sn[:, 1] * 10 ** (-0.4 * extcon * a_lam_sn)
         _EXTINCTED_FLUX[cache_key] = cached
     return cached
+
+
+def polynomial_continuum(flux, lam, order):
+    """Low-order polynomial continuum fitted in log-wavelength, SNID-style.
+
+    Unlike a running mean this imposes no length scale, so it follows the
+    overall shape without eating the broad features (Si II, Ca II) that carry
+    the classification. Every row is fitted at once.
+    """
+    x = np.log(lam)
+    x = (x - x.mean()) / x.std()  # condition the fit
+    y = np.atleast_2d(flux)
+    finite = np.isfinite(y)
+    # polyfit cannot skip NaN per row; the gaps sit at the edges where a
+    # template leaves the range, so fill with the row mean and fit through them.
+    means = np.where(finite.any(1), np.nanmean(np.where(finite, y, np.nan), axis=1), 0.0)
+    filled = np.where(finite, y, means[:, None])
+    coeffs = np.polynomial.polynomial.polyfit(x, filled.T, order)
+    # polyval takes the coefficients on the first axis and returns (rows, lam).
+    return np.polynomial.polynomial.polyval(x, coeffs).reshape(np.shape(flux))
+
+
+def running_continuum(flux, width):
+    """Running mean along the last axis, ignoring NaN."""
+    finite = np.isfinite(flux)
+    filled = np.where(finite, flux, 0.0)
+    total = uniform_filter1d(filled, width, axis=-1, mode="nearest")
+    count = uniform_filter1d(finite.astype(np.float64), width, axis=-1, mode="nearest")
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(count > 0, total / count, np.nan)
+
+
+def divide_out_continuum(flux, lam, width, order):
+    """Flatten each spectrum by dividing out its continuum.
+
+    NGSF otherwise has to model the continuum, using the host-galaxy component
+    and A_v to do it, and that freedom lets a template match at the wrong
+    redshift. Removing it first leaves the fit driven by features, which is what
+    actually carries redshift information.
+
+    Operates on the last axis and preserves NaN, so uncovered wavelengths stay
+    excluded downstream.
+    """
+    continuum = polynomial_continuum(flux, lam, order) if order else running_continuum(flux, width)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        # A continuum at or below zero carries no scale to divide by.
+        return np.where(continuum > 0, flux / continuum, np.nan)
 
 
 def sn_hg_arrays(
@@ -264,6 +312,14 @@ def core(
     gal_2d = gal[:, 0, :]
     sn_2d = sn[0, :, :]
 
+    continuum_width = kwargs.get("continuum_width", 0)
+    continuum_order = kwargs.get("continuum_order", 0)
+    if continuum_width or continuum_order:
+        # int_obj is flattened once by the caller; templates shift with z, so
+        # they have to be flattened here.
+        gal_2d = divide_out_continuum(gal_2d, lam, continuum_width, continuum_order)
+        sn_2d = divide_out_continuum(sn_2d, lam, continuum_width, continuum_order)
+
     # A NaN anywhere in a term drops that wavelength from the sum. Zero-filling
     # is equivalent for products, and the masks carry the bookkeeping.
     m_gal = np.isfinite(gal_2d)
@@ -477,6 +533,22 @@ def all_parameter_space(
 
     # Invariant across the (z, A_v) grid; core() used to rebuild it every call.
     kwargs["sigma"] = error_obj(kwargs["kind"], lam, kwargs["original"])
+
+    # The object does not move with redshift, so flatten it once here; core()
+    # flattens the templates, which do.
+    continuum_width = kwargs.get("continuum_width", 0)
+    continuum_order = kwargs.get("continuum_order", 0)
+    if continuum_width or continuum_order:
+        # Scale the errors by the object's continuum, not by their own, so the
+        # flattened residuals stay correctly weighted.
+        continuum = (
+            polynomial_continuum(int_obj, lam, continuum_order)
+            if continuum_order
+            else running_continuum(int_obj, continuum_width)
+        )
+        with np.errstate(invalid="ignore", divide="ignore"):
+            int_obj = np.where(continuum > 0, int_obj / continuum, np.nan)
+            kwargs["sigma"] = np.where(continuum > 0, kwargs["sigma"] / continuum, np.nan)
 
     if templates_sn_trunc is not None:
         pass

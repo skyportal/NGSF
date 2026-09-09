@@ -134,6 +134,44 @@ def test_fit_writes_the_model_spectrum_for_each_ranked_match(tree):
         assert 0.1 < sum(finite) / len(finite) < 10
 
 
+def test_fit_handles_a_spectrum_narrower_than_the_fitted_range(tree, tmp_path):
+    """A spectrum that stops short of the fitted range leaves the error spectrum
+    undefined past its last point. Those wavelengths must drop out of chi2, not
+    poison it -- getting this wrong makes every chi2 inf and the ranking junk,
+    and it is invisible on spectra that span the range. Cut at 9000 A, which
+    still clears minimum_overlap; cutting further would make inf correct."""
+    narrow = tmp_path / "narrow.ascii"
+    kept = [
+        line
+        for line in SPECTRUM.read_text().splitlines()
+        if line.strip() and not line.startswith("#") and float(line.split()[0]) < 9000
+    ]
+    narrow.write_text("\n".join(kept) + "\n")
+
+    proc = subprocess.run(
+        [sys.executable, "run.py", str(narrow), str(REDSHIFT), "4000", "9500"],
+        cwd=tree,
+        env={
+            **os.environ,
+            "NGSFCONFIG": str(tree / "config" / "parameters.json"),
+            "PYTHONPATH": str(tree),
+            "MPLBACKEND": "Agg",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, f"NGSF failed:\n{proc.stdout[-2000:]}\n{proc.stderr[-2000:]}"
+
+    rows = list(csv.DictReader((tree / "fit_results_z" / "narrow.csv").open()))
+    assert rows, "results table is empty"
+    chi2 = [float(r["CHI2/dof"]) for r in rows]
+    assert all(c == c for c in chi2), "NaN in CHI2/dof"
+    assert any(c != float("inf") for c in chi2), "every chi2 is inf; the fit found nothing"
+    # The table is ranked on CHI2/dof2, which is the column NGSF sorts by.
+    ranked = [float(r["CHI2/dof2"]) for r in rows]
+    assert ranked == sorted(ranked), "results are not ranked"
+
+
 def test_fit_records_the_parameters_it_used(tree):
     run_fit(tree, REDSHIFT)
     used = json.loads((tree / "fit_results_z" / f"{SPECTRUM.stem}_pars_used.json").read_text())

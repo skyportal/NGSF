@@ -26,6 +26,21 @@ with open(configfile) as config_file:
 np.seterr(divide="ignore", invalid="ignore")
 
 
+# Extinguished template fluxes, keyed by (template, A_v). The extinction factor
+# does not depend on redshift, so without this the pow is recomputed for every
+# template at every one of the ~150 redshift steps. ~100 MB for a full bank.
+_EXTINCTED_FLUX = {}
+
+
+def _extincted_flux(key, one_sn, a_lam_sn, extcon):
+    cached = _EXTINCTED_FLUX.get((key, extcon))
+    if cached is None:
+        # Same expression and order as before, minus the z-dependent divide.
+        cached = one_sn[:, 1] * 10 ** (-0.4 * extcon * a_lam_sn)
+        _EXTINCTED_FLUX[(key, extcon)] = cached
+    return cached
+
+
 def sn_hg_arrays(
     z,
     extcon,
@@ -40,10 +55,11 @@ def sn_hg_arrays(
     sn = []
     gal = []
     for i in range(0, len(templates_sn_trunc)):
-        one_sn = templates_sn_trunc_dict[templates_sn_trunc[i]]
-        a_lam_sn = alam_dict[templates_sn_trunc[i]]
+        key = templates_sn_trunc[i]
+        one_sn = templates_sn_trunc_dict[key]
+        a_lam_sn = alam_dict[key]
         redshifted_sn = one_sn[:, 0] * (z + 1)
-        extinct_excon = one_sn[:, 1] * 10 ** (-0.4 * extcon * a_lam_sn) / (1 + z)
+        extinct_excon = _extincted_flux(key, one_sn, a_lam_sn, extcon) / (1 + z)
         sn_interp = np.interp(lam, redshifted_sn, extinct_excon, left=np.nan, right=np.nan)
 
         sn.append(sn_interp)
@@ -217,13 +233,14 @@ def core(
 
     if resolution:
         pass
-    kind = kwargs["kind"]
     original = kwargs["original"]
     minimum_overlap = kwargs["minimum_overlap"]
 
     name = os.path.basename(original)
 
-    sigma = error_obj(kind, lam, original)
+    # Depends on neither z nor A_v, so all_parameter_space computes it once
+    # rather than re-reading the spectrum from disk on every call.
+    sigma = kwargs["sigma"]
 
     sn, gal = sn_hg_arrays(
         z,
@@ -447,6 +464,9 @@ def all_parameter_space(
     start = time.time()
 
     save = kwargs["save"]
+
+    # Invariant across the (z, A_v) grid; core() used to rebuild it every call.
+    kwargs["sigma"] = error_obj(kwargs["kind"], lam, kwargs["original"])
 
     if templates_sn_trunc is not None:
         pass

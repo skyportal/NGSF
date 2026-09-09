@@ -543,6 +543,12 @@ def all_parameter_space(
 
     sn_spec_files = [x for x in path_dict.keys()]
     results = []
+    # chi2 as a function of redshift. NGSF evaluates the whole surface and then
+    # keeps only the best row per template, so the shape is otherwise discarded.
+    # Diagnostic only: measured against a 25-spectrum set, the width of the
+    # minimum does NOT predict whether the redshift is right -- wrong answers
+    # are usually just as sharply peaked as correct ones.
+    chi2_profile = {}
 
     if not verbose:
         print(
@@ -560,7 +566,7 @@ def all_parameter_space(
         if verbose:
             print(f"{element[1]:.2f}", end=" ", flush=True)
 
-        a, _ = core(
+        a, grid_chi2 = core(
             int_obj,
             element[0],
             element[1],
@@ -576,6 +582,14 @@ def all_parameter_space(
         )
 
         results.extend(a)
+
+        # Best reduced chi2 at this redshift, minimised over A_v and templates.
+        # core() already ranks them, so this is the head of what it returns.
+        if grid_chi2:
+            z_val = float(element[0])
+            best_here = float(min(grid_chi2))
+            if z_val not in chi2_profile or best_here < chi2_profile[z_val]:
+                chi2_profile[z_val] = best_here
 
     if verbose:
         print("\nDone.")
@@ -601,6 +615,16 @@ def all_parameter_space(
     result.sort("CHI2/dof2")
 
     ascii.write(result, save + ".csv", format="csv", fast_writer=False, overwrite=True)
+
+    if chi2_profile:
+        profile = table.Table(
+            rows=[(z, chi2_profile[z]) for z in sorted(chi2_profile)],
+            names=("Z", "CHI2/dof2"),
+            dtype=("f", "f"),
+        )
+        ascii.write(
+            profile, save + "_chi2_vs_z.csv", format="csv", fast_writer=False, overwrite=True
+        )
 
     end = time.time()
     print(f"Runtime: {end - start: .2f}s ")

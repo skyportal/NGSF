@@ -202,6 +202,34 @@ def test_fit_refuses_a_spectrum_that_barely_overlaps_the_range(tree, tmp_path):
     assert not (tree / "fit_results_z" / "sparse.csv").exists()
 
 
+def test_free_redshift_fit_writes_the_chi2_profile(tree):
+    """The results table keeps only the best row per template, so the shape of
+    chi2 in z is otherwise computed and discarded. Kept as a diagnostic; note
+    the width of the minimum does not by itself indicate a trustworthy z."""
+    # A short grid keeps this quick; the profile behaviour is the same.
+    config_path = tree / "config" / "parameters.json"
+    config = json.loads(config_path.read_text())
+    config.update({"z_range_begin": 0.0, "z_range_end": 0.01, "z_int": 0.001})
+    config_path.write_text(json.dumps(config))
+
+    run_fit(tree, 100)  # 100 is NGSF's free-redshift sentinel
+
+    profile = tree / "fit_results" / f"{SPECTRUM.stem}_chi2_vs_z.csv"
+    assert profile.exists(), "no chi2 profile written"
+    rows = list(csv.DictReader(profile.open()))
+    assert len(rows) == 11, f"expected one row per redshift step, got {len(rows)}"
+
+    zs = [float(r["Z"]) for r in rows]
+    assert zs == sorted(zs), "profile is not ordered by redshift"
+    assert abs(zs[0]) < 1e-6 and abs(zs[-1] - 0.01) < 1e-6, "profile does not span the grid"
+
+    chi2 = [float(r["CHI2/dof2"]) for r in rows]
+    assert all(c == c for c in chi2), "NaN in the profile"
+    # The best profile value must agree with the best of the results table.
+    best_rows = list(csv.DictReader((tree / "fit_results" / f"{SPECTRUM.stem}.csv").open()))
+    assert min(chi2) <= float(best_rows[0]["CHI2/dof2"]) * 1.0001
+
+
 def test_fit_records_the_parameters_it_used(tree):
     run_fit(tree, REDSHIFT)
     used = json.loads((tree / "fit_results_z" / f"{SPECTRUM.stem}_pars_used.json").read_text())

@@ -237,14 +237,33 @@ def core(
     )
 
     # Apply linear algebra witchcraft
+    #
+    # Every quantity below is a sum over the wavelength axis of a product of
+    # (galaxy, wavelength) and (supernova, wavelength) terms, i.e. a contraction
+    # -- so each is one matrix multiply. Doing it that way never materialises the
+    # (n_gal, n_sn, n_lam) cube the broadcast form needed, which is where the
+    # time and the memory traffic went.
+    gal_2d = gal[:, 0, :]
+    sn_2d = sn[0, :, :]
 
-    # Each of these five sums was being recomputed two or three times over; every
-    # np.nansum copies the whole cube to strip NaNs, so they are worth holding.
-    sn_sq = np.nansum(sn**2, 2)
-    gal_sq = np.nansum(gal**2, 2)
-    sn_gal = np.nansum(gal * sn, 2)
-    sn_obj = np.nansum(sn * int_obj, 2)
-    gal_obj = np.nansum(gal * int_obj, 2)
+    # A NaN anywhere in a term drops that wavelength from the sum. Zero-filling
+    # is equivalent for products, and the masks carry the bookkeeping.
+    m_gal = np.isfinite(gal_2d)
+    m_sn = np.isfinite(sn_2d)
+    m_obj = np.isfinite(int_obj)
+    gal_0 = np.where(m_gal, gal_2d, 0.0)
+    sn_0 = np.where(m_sn, sn_2d, 0.0)
+    obj_0 = np.where(m_obj, int_obj, 0.0)
+
+    gal_mask = m_gal.astype(np.float64)
+    # obj is common to every pair, so fold it into the supernova-side mask once.
+    sn_mask = (m_sn & m_obj).astype(np.float64)
+
+    sn_sq = np.sum(sn_0**2, 1)[np.newaxis, :]
+    gal_sq = np.sum(gal_0**2, 1)[:, np.newaxis]
+    sn_gal = gal_0 @ sn_0.T
+    sn_obj = np.sum(sn_0 * obj_0, 1)[np.newaxis, :]
+    gal_obj = np.sum(gal_0 * obj_0, 1)[:, np.newaxis]
 
     c = 1 / (sn_sq * gal_sq - sn_gal**2)
     b = c * (gal_sq * sn_obj - sn_gal * gal_obj)
@@ -253,23 +272,23 @@ def core(
     b[b < 0] = np.nan
     d[d < 0] = np.nan
 
-    # Add new axis in order to compute chi2
-    sn_b = b[:, :, np.newaxis]
-    gal_d = d[:, :, np.newaxis]
-
-    # Obtain number of degrees of freedom
-
-    # The residual was built twice, once for the overlap count and once for chi2.
-    residual = int_obj - (sn_b * sn + gal_d * gal)
-
-    a = np.isnan((residual / sigma) ** 2)
-    # a is boolean, so there is nothing for nansum to strip.
-    times = len(lam) - np.sum(a, 2)
+    # Number of wavelengths where the object and both templates are all finite.
+    times = gal_mask @ sn_mask.T
 
     overlap = times / len(lam) > minimum_overlap
 
-    # Obtain and reduce chi2
-    chi2 = np.nansum((residual**2 / sigma**2), 2)
+    # chi2 = sum((obj - b*sn - d*gal)^2 / sigma^2) expanded into six masked
+    # contractions, so it too avoids building the cube. Each term is restricted
+    # to the same per-pair valid wavelengths as the direct form.
+    w = 1 / sigma**2
+    t_oo = gal_mask @ (sn_mask * (obj_0**2 * w)).T
+    t_os = gal_mask @ (sn_mask * (obj_0 * w) * sn_0).T
+    t_og = (gal_mask * gal_0) @ (sn_mask * (obj_0 * w)).T
+    t_ss = gal_mask @ (sn_mask * (sn_0**2 * w)).T
+    t_sg = (gal_mask * gal_0) @ (sn_mask * (sn_0 * w)).T
+    t_gg = (gal_mask * (gal_0**2 * w)) @ sn_mask.T
+
+    chi2 = t_oo - 2 * b * t_os - 2 * d * t_og + b**2 * t_ss + 2 * b * d * t_sg + d**2 * t_gg
 
     # avoid short overlaps
     chi2[~overlap] = np.inf

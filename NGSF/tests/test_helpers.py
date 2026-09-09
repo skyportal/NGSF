@@ -85,3 +85,21 @@ def test_version_falls_back_to_the_baked_file(monkeypatch, tmp_path):
         NGSF_version, "_git_version", lambda: (_ for _ in ()).throw(OSError("no git"))
     )
     assert NGSF_version._get_version() == "abc1234 container"
+
+
+def test_extinction_cache_respects_template_length():
+    """superfit() retries a failed fit at a coarser resolution, which re-bins
+    every template to a different length. A cache keyed only on the template
+    name would hand the retry the previous binning and fail in np.interp."""
+    from NGSF.SF_functions import _EXTINCTED_FLUX, _extincted_flux
+
+    _EXTINCTED_FLUX.clear()
+    fine = np.column_stack([np.linspace(4000.0, 9000.0, 495), np.ones(495)])
+    coarse = np.column_stack([np.linspace(4000.0, 9000.0, 165), np.ones(165)])
+
+    first = _extincted_flux("a-template", fine, np.ones(495), 1.0)
+    assert len(first) == 495
+
+    # same name and A_v, coarser binning: must not reuse the 495-point row
+    second = _extincted_flux("a-template", coarse, np.ones(165), 1.0)
+    assert len(second) == 165, "cache returned a row of the wrong length"

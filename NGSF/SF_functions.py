@@ -33,11 +33,12 @@ _EXTINCTED_FLUX = {}
 
 
 def _extincted_flux(key, one_sn, a_lam_sn, extcon):
-    cached = _EXTINCTED_FLUX.get((key, extcon))
+    cache_key = (key, extcon, len(one_sn))
+    cached = _EXTINCTED_FLUX.get(cache_key)
     if cached is None:
         # Same expression and order as before, minus the z-dependent divide.
         cached = one_sn[:, 1] * 10 ** (-0.4 * extcon * a_lam_sn)
-        _EXTINCTED_FLUX[(key, extcon)] = cached
+        _EXTINCTED_FLUX[cache_key] = cached
     return cached
 
 
@@ -542,6 +543,10 @@ def all_parameter_space(
         templates_gal_trunc_dict[templates_gal_trunc[i]] = one_gal
 
     sn_spec_files = [x for x in path_dict.keys()]
+    # superfit() retries a failed fit at a coarser resolution, which re-bins every
+    # template to a different length. The cache is only ever useful within one
+    # fit, so drop it here rather than let a retry read the previous binning.
+    _EXTINCTED_FLUX.clear()
     results = []
     # chi2 as a function of redshift. NGSF evaluates the whole surface and then
     # keeps only the best row per template, so the shape is otherwise discarded.

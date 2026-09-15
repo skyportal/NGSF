@@ -101,9 +101,16 @@ def test_fit_at_fixed_redshift(tree):
 
     assert rows, "results table is empty"
     assert all(abs(float(r["Z"]) - REDSHIFT) < 1e-6 for r in rows)
-    chi2 = [float(r["CHI2/dof"]) for r in rows]
-    assert all(c == c for c in chi2), "NaN in CHI2/dof"
-    assert chi2 == sorted(chi2), "results are not ranked by chi2"
+    # CHI2/dof2 is the statistic the fit ranks on; CHI2/dof is the same chi2
+    # over one power of the degrees of freedom, reported alongside it. The two
+    # order differently whenever templates overlap the spectrum by different
+    # amounts, so the ranking has to be checked against the column that sets it.
+    ranking = [float(r["CHI2/dof2"]) for r in rows]
+    assert all(c == c for c in ranking), "NaN in CHI2/dof2"
+    assert ranking == sorted(ranking), "results are not ranked by chi2"
+    assert all(float(r["CHI2/dof"]) == float(r["CHI2/dof"]) for r in rows), (
+        "NaN in CHI2/dof"
+    )
 
     # The ranked fit plots are what gets posted back to SkyPortal/Fritz.
     assert sorted(out_dir.glob(f"{SPECTRUM.stem}_ngsf*.png"))

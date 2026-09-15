@@ -108,9 +108,7 @@ def test_fit_at_fixed_redshift(tree):
     ranking = [float(r["CHI2/dof2"]) for r in rows]
     assert all(c == c for c in ranking), "NaN in CHI2/dof2"
     assert ranking == sorted(ranking), "results are not ranked by chi2"
-    assert all(float(r["CHI2/dof"]) == float(r["CHI2/dof"]) for r in rows), (
-        "NaN in CHI2/dof"
-    )
+    assert all(float(r["CHI2/dof"]) == float(r["CHI2/dof"]) for r in rows), "NaN in CHI2/dof"
 
     # The ranked fit plots are what gets posted back to SkyPortal/Fritz.
     assert sorted(out_dir.glob(f"{SPECTRUM.stem}_ngsf*.png"))

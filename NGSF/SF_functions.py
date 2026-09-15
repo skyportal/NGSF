@@ -135,20 +135,34 @@ def sn_hg_arrays(
     return sn, gal
 
 
-def remove_telluric(spectrum):
+# Atmospheric absorption, in observed wavelength: these sit where the Earth puts
+# them and do not move with the object's redshift, unlike the host lines masked
+# by mask_gal_lines. Only the O2 A-band used to be removed, which left the B-band
+# and the water bands to be fitted as if they were features of the source.
+TELLURIC_BANDS = (
+    (6860.0, 6890.0),  # O2 B
+    (7160.0, 7350.0),  # H2O
+    (7594.0, 7680.0),  # O2 A, the deepest
+    (8100.0, 8400.0),  # H2O
+    (8900.0, 9200.0),  # H2O
+)
 
-    lam = spectrum[:, 0]
-    flux = spectrum[:, 1]
 
-    flux_no_tell = 0
-    for i in range(0, len(lam)):
-        if 7594 <= lam[i] <= 7680:
-            flux[i] = -10000
+def remove_telluric(spectrum, bands=TELLURIC_BANDS):
+    """Blank the atmospheric bands, so nothing downstream fits them.
 
-        array1 = flux
-        flux_no_tell = np.where(array1 == -10000, np.nan, array1)
+    NaN rather than a sentinel: the interpolation onto the common grid carries
+    it through, and every later step already skips non-finite flux.
+    """
+    lam = np.asarray(spectrum[:, 0], dtype=float)
+    flux = np.array(spectrum[:, 1], dtype=float)
 
-    return np.array([lam, flux_no_tell]).T
+    absorbed = np.zeros(lam.shape, dtype=bool)
+    for lo, hi in bands:
+        absorbed |= (lam >= lo) & (lam <= hi)
+    flux[absorbed] = np.nan
+
+    return np.array([lam, flux]).T
 
 
 def Alam(lamin, A_v=1, R_v=3.1):

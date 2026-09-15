@@ -134,3 +134,35 @@ def test_polynomial_continuum_handles_rows_and_nan():
     assert out.shape == rows.shape
     assert np.isfinite(out).all(), "NaN gaps must not poison the fit"
     assert abs(out[1].mean() / out[0].mean() - 2.0) < 0.05
+
+
+def test_remove_telluric_blanks_every_atmospheric_band():
+    """The A-band is the deepest but not the only one; a fit that sees the
+    others treats the Earth's atmosphere as a feature of the source."""
+    from NGSF.SF_functions import remove_telluric
+
+    lam = np.arange(4000.0, 9600.0, 1.0)
+    spectrum = np.array([lam, np.ones_like(lam)]).T
+    out = remove_telluric(spectrum)
+    blanked = np.isnan(out[:, 1])
+
+    def at(w):
+        return bool(blanked[np.argmin(np.abs(lam - w))])
+
+    assert at(7600), "O2 A-band"
+    assert at(6875), "O2 B-band"
+    assert at(8200) and at(9000), "water bands"
+    assert not at(5500), "clean continuum must survive"
+    assert np.array_equal(out[:, 0], lam)
+
+
+def test_remove_telluric_leaves_the_caller_s_spectrum_alone():
+    """It used to write the sentinel into the array it was handed, so the
+    object's own spectrum came back altered."""
+    from NGSF.SF_functions import remove_telluric
+
+    lam = np.arange(7000.0, 8000.0, 1.0)
+    spectrum = np.array([lam, np.ones_like(lam)]).T
+    remove_telluric(spectrum)
+    assert np.isfinite(spectrum[:, 1]).all()
+    assert (spectrum[:, 1] == 1.0).all()
